@@ -8,6 +8,7 @@
 	<version>${revision}</version>
     <modules>
         <module>spring-boot-mytest</module>
+        <module>zdy-spring-boot-starter</module>
     </modules>
     <packaging>pom</packaging>
 	<name>Spring Boot Build</name>

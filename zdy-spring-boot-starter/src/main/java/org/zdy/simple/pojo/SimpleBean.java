@@ -1,12 +1,15 @@
-package org.springboot.mytest.pojo;
+package org.zdy.simple.pojo;
 
-import org.springframework.stereotype.Component;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 /**
  * @author frankq
  * @date 2021/11/21
  */
-@Component
+@EnableConfigurationProperties(SimpleBean.class)
+@ConfigurationProperties(prefix = "simplebean")
 public class SimpleBean {
 
 	private long id;
@@ -34,5 +37,13 @@ public class SimpleBean {
 
 	public void setName(String name) {
 		this.name = name;
+	}
+
+	@Override
+	public String toString() {
+		return "SimpleBean{" +
+				"id=" + id +
+				", name='" + name + '\'' +
+				'}';
 	}
 }

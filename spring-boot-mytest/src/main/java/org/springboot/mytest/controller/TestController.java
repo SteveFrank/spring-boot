@@ -1,6 +1,6 @@
 package org.springboot.mytest.controller;
 
-import org.springboot.mytest.pojo.SimpleBean;
+import org.zdy.simple.pojo.SimpleBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,10 +21,6 @@ public class TestController {
 		System.out.println(simpleBean);
 		return "源码环境构建成功";
 	}
-
-
-
-
 
 
 /*	@Value("${com.name}")

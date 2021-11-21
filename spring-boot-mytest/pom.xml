@@ -29,7 +29,7 @@
 		</dependency>-->
 
 		<dependency>
-			<groupId>com.itheima</groupId>
+			<groupId>org.zdy.simple</groupId>
 			<artifactId>zdy-spring-boot-starter</artifactId>
 			<version>1.0-SNAPSHOT</version>
 		</dependency>
