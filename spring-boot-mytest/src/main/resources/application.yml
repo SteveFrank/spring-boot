@@ -1,0 +1,8 @@
+server:
+  port: 8081
+#自定义配置信息用于"/actuator/info"读取
+info:
+  name: admin
+  age: 100
+  phone: 110
+

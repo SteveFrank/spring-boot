@@ -84,7 +84,7 @@ import org.springframework.context.annotation.Import;
  * @since 1.0.0
  */
 @Configuration(proxyBeanMethods = false)
-@ConditionalOnClass({ RabbitTemplate.class, Channel.class })
+@ConditionalOnClass({ RabbitTemplate.class, Channel.class }) // 条件注解，在类路径中必须要存在RabbitTemplate 以及 Channel类（引入jar包，加依赖），才会让当前的工厂类生效
 @EnableConfigurationProperties(RabbitProperties.class)
 @Import(RabbitAnnotationDrivenConfiguration.class)
 public class RabbitAutoConfiguration {

@@ -92,10 +92,13 @@ public abstract class AutoConfigurationPackages {
 	public static void register(BeanDefinitionRegistry registry, String... packageNames) {
 		if (registry.containsBeanDefinition(BEAN)) {
 			BeanDefinition beanDefinition = registry.getBeanDefinition(BEAN);
+			// 获取构造方法
 			ConstructorArgumentValues constructorArguments = beanDefinition.getConstructorArgumentValues();
+			// 根据构造方法进行设置值
 			constructorArguments.addIndexedArgumentValue(0, addBasePackages(constructorArguments, packageNames));
 		}
 		else {
+			// 如果该bean尚未注册，则注册bean，参数中提供的包名称会被设置到bean中去
 			GenericBeanDefinition beanDefinition = new GenericBeanDefinition();
 			beanDefinition.setBeanClass(BasePackages.class);
 			beanDefinition.getConstructorArgumentValues().addIndexedArgumentValue(0, packageNames);
@@ -120,6 +123,7 @@ public abstract class AutoConfigurationPackages {
 
 		@Override
 		public void registerBeanDefinitions(AnnotationMetadata metadata, BeanDefinitionRegistry registry) {
+			// 将注解标注的元信息传入，获取到相应的包名
 			register(registry, new PackageImport(metadata).getPackageName());
 		}
 

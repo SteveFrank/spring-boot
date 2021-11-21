@@ -42,6 +42,8 @@ import org.springframework.util.ErrorHandler;
  * @author Andy Wilkinson
  * @author Artsiom Yudovin
  * @since 1.0.0
+ *
+ * Spring Boot 发布事件的监听器
  */
 public class EventPublishingRunListener implements SpringApplicationRunListener, Ordered {
 

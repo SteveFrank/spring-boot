@@ -40,10 +40,10 @@ import org.springframework.web.filter.CharacterEncodingFilter;
  * @author Brian Clozel
  * @since 2.0.0
  */
-@Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(HttpProperties.class)
-@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-@ConditionalOnClass(CharacterEncodingFilter.class)
+@Configuration(proxyBeanMethods = false) // 是一个配置类
+@EnableConfigurationProperties(HttpProperties.class) // properties的导入处理 @Value 等需要配合该注解
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET) // 判断当前应用是否是web应用，如果是，当前配置类生效。并把HttpEncodingProperties加入到 ioc 容器中
+@ConditionalOnClass(CharacterEncodingFilter.class) // 判断当前项目有没有这个CharacterEncodingFilter ： SpringMVC中进行乱码解决的过滤器
 @ConditionalOnProperty(prefix = "spring.http.encoding", value = "enabled", matchIfMissing = true)
 public class HttpEncodingAutoConfiguration {
 

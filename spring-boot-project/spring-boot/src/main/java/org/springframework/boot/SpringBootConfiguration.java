@@ -43,7 +43,7 @@ import org.springframework.core.annotation.AliasFor;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@Configuration
+@Configuration // 说明是配置类 @Configuration 他们的底层注解其实都是 @Component
 public @interface SpringBootConfiguration {
 
 	/**
