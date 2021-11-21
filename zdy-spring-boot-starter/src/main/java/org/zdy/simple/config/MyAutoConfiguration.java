@@ -1,5 +1,6 @@
 package org.zdy.simple.config;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.zdy.simple.pojo.SimpleBean;
@@ -9,6 +10,7 @@ import org.zdy.simple.pojo.SimpleBean;
  * @date 2021/11/21
  */
 @Configuration
+@ConditionalOnBean(ConfigMarker.class)
 public class MyAutoConfiguration {
 
 	@Bean
