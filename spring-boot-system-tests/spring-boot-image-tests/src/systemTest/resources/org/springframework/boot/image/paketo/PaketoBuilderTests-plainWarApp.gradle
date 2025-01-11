@@ -6,9 +6,18 @@ plugins {
 }
 
 repositories {
+	exclusiveContent {
+		forRepository {
+			maven {
+				url = '{systemTestMavenRepository}'
+			}
+		}
+		filter {
+			includeGroup "org.springframework.boot"
+		}
+	}
 	mavenCentral()
-	maven { url 'https://repo.spring.io/milestone' }
-	maven { url 'https://repo.spring.io/snapshot' }
+	spring.mavenRepositories()
 }
 
 dependencies {
@@ -23,4 +32,5 @@ war {
 
 bootBuildImage {
 	archiveFile = war.archiveFile
+	environment = ['BP_JVM_VERSION': java.targetCompatibility.getMajorVersion(), 'BP_TOMCAT_VERSION': '10.*']
 }

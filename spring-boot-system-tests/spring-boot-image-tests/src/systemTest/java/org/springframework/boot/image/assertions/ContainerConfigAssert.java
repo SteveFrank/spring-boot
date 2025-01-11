@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,18 @@
 
 package org.springframework.boot.image.assertions;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 import com.github.dockerjava.api.model.ContainerConfig;
 import org.assertj.core.api.AbstractAssert;
 import org.assertj.core.api.AbstractListAssert;
+import org.assertj.core.api.AbstractMapAssert;
 import org.assertj.core.api.AbstractObjectAssert;
-import org.assertj.core.api.AbstractStringAssert;
-import org.assertj.core.api.Assertions;
-import org.assertj.core.api.AssertionsForClassTypes;
-import org.assertj.core.api.InstanceOfAssertFactories;
 import org.assertj.core.api.ListAssert;
 import org.assertj.core.api.ObjectAssert;
 
@@ -47,16 +48,16 @@ public class ContainerConfigAssert extends AbstractAssert<ContainerConfigAssert,
 		super(containerConfig, ContainerConfigAssert.class);
 	}
 
-	public BuildMetadataAssert buildMetadata() {
-		return new BuildMetadataAssert(jsonLabel(BUILD_METADATA_LABEL));
+	public void buildMetadata(Consumer<BuildMetadataAssert> assertConsumer) {
+		assertConsumer.accept(new BuildMetadataAssert(jsonLabel(BUILD_METADATA_LABEL)));
 	}
 
-	public LifecycleMetadataAssert lifecycleMetadata() {
-		return new LifecycleMetadataAssert(jsonLabel(LIFECYCLE_METADATA_LABEL));
+	public void lifecycleMetadata(Consumer<LifecycleMetadataAssert> assertConsumer) {
+		assertConsumer.accept(new LifecycleMetadataAssert(jsonLabel(LIFECYCLE_METADATA_LABEL)));
 	}
 
-	public AbstractStringAssert<?> label(String label) {
-		return AssertionsForClassTypes.assertThat(getLabel(label));
+	public void labels(Consumer<LabelsAssert> assertConsumer) {
+		assertConsumer.accept(new LabelsAssert(this.actual.getLabels()));
 	}
 
 	private JsonContentAssert jsonLabel(String label) {
@@ -72,6 +73,17 @@ public class ContainerConfigAssert extends AbstractAssert<ContainerConfigAssert,
 			failWithActualExpectedAndMessage(labels, label, "Expected label not found in container config");
 		}
 		return labels.get(label);
+	}
+
+	/**
+	 * Asserts for labels on an image.
+	 */
+	public static class LabelsAssert extends AbstractMapAssert<LabelsAssert, Map<String, String>, String, String> {
+
+		protected LabelsAssert(Map<String, String> labels) {
+			super(labels, LabelsAssert.class);
+		}
+
 	}
 
 	/**
@@ -91,18 +103,18 @@ public class ContainerConfigAssert extends AbstractAssert<ContainerConfigAssert,
 			return this.actual.extractingJsonPathArrayValue("$.buildpacks[*].id");
 		}
 
-		public ListAssert<Object> bomDependencies() {
-			return this.actual
-					.extractingJsonPathArrayValue("$.bom[?(@.name=='dependencies')].metadata.dependencies[*].name");
+		public AbstractListAssert<?, List<? extends String>, String, ObjectAssert<String>> processOfType(String type) {
+			return this.actual.extractingJsonPathArrayValue("$.processes[?(@.type=='%s')]", type)
+				.singleElement()
+				.extracting("command", "args")
+				.flatMap(this::getArgs);
 		}
 
-		public AbstractStringAssert<?> bomJavaVersion(String javaType) {
-			return this.actual.extractingJsonPathArrayValue("$.bom[?(@.name=='%s')].metadata.version", javaType)
-					.singleElement(Assertions.as(InstanceOfAssertFactories.STRING));
-		}
-
-		public AbstractObjectAssert<?, Object> processOfType(String type) {
-			return this.actual.extractingJsonPathArrayValue("$.processes[?(@.type=='%s')]", type).singleElement();
+		private Collection<String> getArgs(Object obj) {
+			if (obj instanceof List<?> list) {
+				return list.stream().map(Objects::toString).toList();
+			}
+			return Collections.emptyList();
 		}
 
 	}
@@ -126,6 +138,10 @@ public class ContainerConfigAssert extends AbstractAssert<ContainerConfigAssert,
 
 		public AbstractListAssert<?, List<?>, Object, ObjectAssert<Object>> appLayerShas() {
 			return this.actual.extractingJsonPathArrayValue("$.app").extracting("sha");
+		}
+
+		public AbstractObjectAssert<?, Object> sbomLayerSha() {
+			return this.actual.extractingJsonPathValue("$.sbom.sha");
 		}
 
 	}

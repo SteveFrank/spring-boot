@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,8 +52,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 
 /**
  * Tests for {@link RemoteClientConfiguration}.
@@ -98,7 +98,7 @@ class RemoteClientConfigurationTests {
 	@Test
 	void failIfNoSecret() {
 		assertThatExceptionOfType(BeanCreationException.class).isThrownBy(() -> configure("http://localhost", false))
-				.withMessageContaining("required to secure your connection");
+			.withMessageContaining("required to secure your connection");
 	}
 
 	@Test
@@ -108,21 +108,21 @@ class RemoteClientConfigurationTests {
 		ClassPathChangedEvent event = new ClassPathChangedEvent(this, changeSet, false);
 		this.clientContext.publishEvent(event);
 		LiveReloadServer server = this.clientContext.getBean(LiveReloadServer.class);
-		Awaitility.await().atMost(Duration.ofMinutes(1)).untilAsserted(() -> verify(server).triggerReload());
+		Awaitility.await().atMost(Duration.ofMinutes(1)).untilAsserted(() -> then(server).should().triggerReload());
 	}
 
 	@Test
 	void liveReloadDisabled() {
 		configure("spring.devtools.livereload.enabled:false");
 		assertThatExceptionOfType(NoSuchBeanDefinitionException.class)
-				.isThrownBy(() -> this.context.getBean(OptionalLiveReloadServer.class));
+			.isThrownBy(() -> this.context.getBean(OptionalLiveReloadServer.class));
 	}
 
 	@Test
 	void remoteRestartDisabled() {
 		configure("spring.devtools.remote.restart.enabled:false");
 		assertThatExceptionOfType(NoSuchBeanDefinitionException.class)
-				.isThrownBy(() -> this.context.getBean(ClassPathFileSystemWatcher.class));
+			.isThrownBy(() -> this.context.getBean(ClassPathFileSystemWatcher.class));
 	}
 
 	private void configure(String... pairs) {

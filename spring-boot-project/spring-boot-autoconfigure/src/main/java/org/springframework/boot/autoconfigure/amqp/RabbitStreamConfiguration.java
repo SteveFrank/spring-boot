@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,9 @@ import com.rabbitmq.stream.Environment;
 import com.rabbitmq.stream.EnvironmentBuilder;
 
 import org.springframework.amqp.rabbit.config.ContainerCustomizer;
+import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.amqp.RabbitProperties.StreamContainer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -33,25 +35,32 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.rabbit.stream.config.StreamRabbitListenerContainerFactory;
 import org.springframework.rabbit.stream.listener.ConsumerCustomizer;
 import org.springframework.rabbit.stream.listener.StreamListenerContainer;
+import org.springframework.rabbit.stream.producer.ProducerCustomizer;
+import org.springframework.rabbit.stream.producer.RabbitStreamOperations;
+import org.springframework.rabbit.stream.producer.RabbitStreamTemplate;
+import org.springframework.rabbit.stream.support.converter.StreamMessageConverter;
 
 /**
  * Configuration for Spring RabbitMQ Stream plugin support.
  *
  * @author Gary Russell
+ * @author Eddú Meléndez
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnClass(StreamRabbitListenerContainerFactory.class)
-@ConditionalOnProperty(prefix = "spring.rabbitmq.listener", name = "type", havingValue = "stream")
 class RabbitStreamConfiguration {
 
 	@Bean(name = "rabbitListenerContainerFactory")
 	@ConditionalOnMissingBean(name = "rabbitListenerContainerFactory")
+	@ConditionalOnProperty(name = "spring.rabbitmq.listener.type", havingValue = "stream")
 	StreamRabbitListenerContainerFactory streamRabbitListenerContainerFactory(Environment rabbitStreamEnvironment,
 			RabbitProperties properties, ObjectProvider<ConsumerCustomizer> consumerCustomizer,
 			ObjectProvider<ContainerCustomizer<StreamListenerContainer>> containerCustomizer) {
 		StreamRabbitListenerContainerFactory factory = new StreamRabbitListenerContainerFactory(
 				rabbitStreamEnvironment);
-		factory.setNativeListener(properties.getListener().getStream().isNativeListener());
+		StreamContainer stream = properties.getListener().getStream();
+		factory.setObservationEnabled(stream.isObservationEnabled());
+		factory.setNativeListener(stream.isNativeListener());
 		consumerCustomizer.ifUnique(factory::setConsumerCustomizer);
 		containerCustomizer.ifUnique(factory::setContainerCustomizer);
 		return factory;
@@ -59,18 +68,60 @@ class RabbitStreamConfiguration {
 
 	@Bean(name = "rabbitStreamEnvironment")
 	@ConditionalOnMissingBean(name = "rabbitStreamEnvironment")
-	Environment rabbitStreamEnvironment(RabbitProperties properties) {
-		return configure(Environment.builder(), properties).build();
+	Environment rabbitStreamEnvironment(RabbitProperties properties, RabbitConnectionDetails connectionDetails,
+			ObjectProvider<EnvironmentBuilderCustomizer> customizers) {
+		EnvironmentBuilder builder = configure(Environment.builder(), properties, connectionDetails);
+		customizers.orderedStream().forEach((customizer) -> customizer.customize(builder));
+		return builder.build();
 	}
 
-	static EnvironmentBuilder configure(EnvironmentBuilder builder, RabbitProperties properties) {
+	@Bean
+	@ConditionalOnMissingBean
+	RabbitStreamTemplateConfigurer rabbitStreamTemplateConfigurer(RabbitProperties properties,
+			ObjectProvider<MessageConverter> messageConverter,
+			ObjectProvider<StreamMessageConverter> streamMessageConverter,
+			ObjectProvider<ProducerCustomizer> producerCustomizer) {
+		RabbitStreamTemplateConfigurer configurer = new RabbitStreamTemplateConfigurer();
+		configurer.setMessageConverter(messageConverter.getIfUnique());
+		configurer.setStreamMessageConverter(streamMessageConverter.getIfUnique());
+		configurer.setProducerCustomizer(producerCustomizer.getIfUnique());
+		return configurer;
+	}
+
+	@Bean
+	@ConditionalOnMissingBean(RabbitStreamOperations.class)
+	@ConditionalOnProperty(name = "spring.rabbitmq.stream.name")
+	RabbitStreamTemplate rabbitStreamTemplate(Environment rabbitStreamEnvironment, RabbitProperties properties,
+			RabbitStreamTemplateConfigurer configurer) {
+		RabbitStreamTemplate template = new RabbitStreamTemplate(rabbitStreamEnvironment,
+				properties.getStream().getName());
+		configurer.configure(template);
+		return template;
+	}
+
+	static EnvironmentBuilder configure(EnvironmentBuilder builder, RabbitProperties properties,
+			RabbitConnectionDetails connectionDetails) {
+		return configure(builder, properties.getStream(), connectionDetails);
+	}
+
+	private static EnvironmentBuilder configure(EnvironmentBuilder builder, RabbitProperties.Stream stream,
+			RabbitConnectionDetails connectionDetails) {
 		builder.lazyInitialization(true);
-		RabbitProperties.Stream stream = properties.getStream();
-		PropertyMapper mapper = PropertyMapper.get();
-		mapper.from(stream.getHost()).to(builder::host);
-		mapper.from(stream.getPort()).to(builder::port);
-		mapper.from(stream.getUsername()).as(withFallback(properties::getUsername)).whenNonNull().to(builder::username);
-		mapper.from(stream.getPassword()).as(withFallback(properties::getPassword)).whenNonNull().to(builder::password);
+		PropertyMapper map = PropertyMapper.get();
+		map.from(stream.getHost()).to(builder::host);
+		map.from(stream.getPort()).to(builder::port);
+		map.from(stream.getVirtualHost())
+			.as(withFallback(connectionDetails::getVirtualHost))
+			.whenNonNull()
+			.to(builder::virtualHost);
+		map.from(stream.getUsername())
+			.as(withFallback(connectionDetails::getUsername))
+			.whenNonNull()
+			.to(builder::username);
+		map.from(stream.getPassword())
+			.as(withFallback(connectionDetails::getPassword))
+			.whenNonNull()
+			.to(builder::password);
 		return builder;
 	}
 

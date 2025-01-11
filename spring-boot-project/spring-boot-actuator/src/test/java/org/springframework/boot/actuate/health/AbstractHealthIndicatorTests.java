@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ class AbstractHealthIndicatorTests {
 	}
 
 	@Test
-	void healthCheckWhenDownWithExceptionThrownDoesNotLogHealthCheckFailedMessage(CapturedOutput output) {
+	void healthCheckWhenDownWithExceptionThrownLogsHealthCheckFailedMessage(CapturedOutput output) {
 		TestHealthIndicator indicator = new TestHealthIndicator("Test message", (builder) -> {
 			throw new IllegalStateException("Test exception");
 		});
@@ -55,9 +55,10 @@ class AbstractHealthIndicatorTests {
 	}
 
 	@Test
-	void healthCheckWhenDownWithExceptionConfiguredDoesNotLogHealthCheckFailedMessage(CapturedOutput output) {
+	void healthCheckWhenDownWithExceptionConfiguredLogsHealthCheckFailedMessage(CapturedOutput output) {
 		Health heath = new TestHealthIndicator("Test message",
-				(builder) -> builder.down().withException(new IllegalStateException("Test exception"))).health();
+				(builder) -> builder.down().withException(new IllegalStateException("Test exception")))
+			.health();
 		assertThat(heath.getStatus()).isEqualTo(Status.DOWN);
 		assertThat(output).contains("Test message").contains("Test exception");
 	}
@@ -94,7 +95,7 @@ class AbstractHealthIndicatorTests {
 
 	static class TestHealthIndicator extends AbstractHealthIndicator {
 
-		private Consumer<Builder> action;
+		private final Consumer<Builder> action;
 
 		TestHealthIndicator(String message, Consumer<Builder> action) {
 			super(message);

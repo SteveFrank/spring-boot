@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.event.ApplicationStartedEvent;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.doReturn;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -73,9 +73,9 @@ class StartupTimeMetricsListenerTests {
 	void metricRecordedWithoutMainAppClassTag() {
 		SpringApplication application = mock(SpringApplication.class);
 		this.listener.onApplicationEvent(new ApplicationStartedEvent(application, null, null, Duration.ofSeconds(2)));
-		TimeGauge applicationStartedGague = this.registry.find("application.started.time").timeGauge();
-		assertThat(applicationStartedGague).isNotNull();
-		assertThat(applicationStartedGague.getId().getTags()).isEmpty();
+		TimeGauge applicationStartedGauge = this.registry.find("application.started.time").timeGauge();
+		assertThat(applicationStartedGauge).isNotNull();
+		assertThat(applicationStartedGauge.getId().getTags()).isEmpty();
 	}
 
 	@Test
@@ -84,9 +84,9 @@ class StartupTimeMetricsListenerTests {
 		Tags tags = Tags.of("foo", "bar");
 		this.listener = new StartupTimeMetricsListener(this.registry, "started", "ready", tags);
 		this.listener.onApplicationEvent(new ApplicationReadyEvent(application, null, null, Duration.ofSeconds(2)));
-		TimeGauge applicationReadyGague = this.registry.find("ready").timeGauge();
-		assertThat(applicationReadyGague).isNotNull();
-		assertThat(applicationReadyGague.getId().getTags()).containsExactlyElementsOf(tags);
+		TimeGauge applicationReadyGauge = this.registry.find("ready").timeGauge();
+		assertThat(applicationReadyGauge).isNotNull();
+		assertThat(applicationReadyGauge.getId().getTags()).containsExactlyElementsOf(tags);
 	}
 
 	@Test
@@ -99,14 +99,14 @@ class StartupTimeMetricsListenerTests {
 
 	private ApplicationStartedEvent applicationStartedEvent(Long startupTimeMs) {
 		SpringApplication application = mock(SpringApplication.class);
-		doReturn(TestMainApplication.class).when(application).getMainApplicationClass();
+		given(application.getMainApplicationClass()).willAnswer((invocation) -> TestMainApplication.class);
 		return new ApplicationStartedEvent(application, null, null,
 				(startupTimeMs != null) ? Duration.ofMillis(startupTimeMs) : null);
 	}
 
 	private ApplicationReadyEvent applicationReadyEvent(Long startupTimeMs) {
 		SpringApplication application = mock(SpringApplication.class);
-		doReturn(TestMainApplication.class).when(application).getMainApplicationClass();
+		given(application.getMainApplicationClass()).willAnswer((invocation) -> TestMainApplication.class);
 		return new ApplicationReadyEvent(application, null, null,
 				(startupTimeMs != null) ? Duration.ofMillis(startupTimeMs) : null);
 	}
@@ -118,9 +118,10 @@ class StartupTimeMetricsListenerTests {
 	private void assertMetricExistsWithCustomTagsAndValue(String metricName, Tags expectedCustomTags,
 			Long expectedValueInMillis) {
 		assertThat(this.registry.find(metricName)
-				.tags(Tags.concat(expectedCustomTags, "main-application-class", TestMainApplication.class.getName()))
-				.timeGauge()).isNotNull().extracting((m) -> m.value(TimeUnit.MILLISECONDS))
-						.isEqualTo(expectedValueInMillis.doubleValue());
+			.tags(Tags.concat(expectedCustomTags, "main.application.class", TestMainApplication.class.getName()))
+			.timeGauge()).isNotNull()
+			.extracting((m) -> m.value(TimeUnit.MILLISECONDS))
+			.isEqualTo(expectedValueInMillis.doubleValue());
 	}
 
 	static class TestMainApplication {

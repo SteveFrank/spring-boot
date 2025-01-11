@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,22 @@
 package org.springframework.boot.autoconfigure.condition;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import org.springframework.boot.autoconfigure.condition.ConditionMessage.Style;
 import org.springframework.context.annotation.Condition;
 import org.springframework.context.annotation.ConditionContext;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.AnnotationAttributes;
+import org.springframework.core.annotation.MergedAnnotation;
+import org.springframework.core.annotation.MergedAnnotationPredicates;
+import org.springframework.core.annotation.MergedAnnotations;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.PropertyResolver;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 import org.springframework.util.Assert;
-import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
 
 /**
@@ -47,8 +49,13 @@ class OnPropertyCondition extends SpringBootCondition {
 
 	@Override
 	public ConditionOutcome getMatchOutcome(ConditionContext context, AnnotatedTypeMetadata metadata) {
-		List<AnnotationAttributes> allAnnotationAttributes = annotationAttributesFromMultiValueMap(
-				metadata.getAllAnnotationAttributes(ConditionalOnProperty.class.getName()));
+		MergedAnnotations annotations = metadata.getAnnotations();
+		List<AnnotationAttributes> allAnnotationAttributes = Stream
+			.concat(annotations.stream(ConditionalOnProperty.class.getName()),
+					annotations.stream(ConditionalOnBooleanProperty.class.getName()))
+			.filter(MergedAnnotationPredicates.unique(MergedAnnotation::getMetaTypes))
+			.map(MergedAnnotation::asAnnotationAttributes)
+			.toList();
 		List<ConditionMessage> noMatch = new ArrayList<>();
 		List<ConditionMessage> match = new ArrayList<>();
 		for (AnnotationAttributes annotationAttributes : allAnnotationAttributes) {
@@ -61,29 +68,6 @@ class OnPropertyCondition extends SpringBootCondition {
 		return ConditionOutcome.match(ConditionMessage.of(match));
 	}
 
-	private List<AnnotationAttributes> annotationAttributesFromMultiValueMap(
-			MultiValueMap<String, Object> multiValueMap) {
-		List<Map<String, Object>> maps = new ArrayList<>();
-		multiValueMap.forEach((key, value) -> {
-			for (int i = 0; i < value.size(); i++) {
-				Map<String, Object> map;
-				if (i < maps.size()) {
-					map = maps.get(i);
-				}
-				else {
-					map = new HashMap<>();
-					maps.add(map);
-				}
-				map.put(key, value.get(i));
-			}
-		});
-		List<AnnotationAttributes> annotationAttributes = new ArrayList<>(maps.size());
-		for (Map<String, Object> map : maps) {
-			annotationAttributes.add(AnnotationAttributes.fromMap(map));
-		}
-		return annotationAttributes;
-	}
-
 	private ConditionOutcome determineOutcome(AnnotationAttributes annotationAttributes, PropertyResolver resolver) {
 		Spec spec = new Spec(annotationAttributes);
 		List<String> missingProperties = new ArrayList<>();
@@ -91,36 +75,41 @@ class OnPropertyCondition extends SpringBootCondition {
 		spec.collectProperties(resolver, missingProperties, nonMatchingProperties);
 		if (!missingProperties.isEmpty()) {
 			return ConditionOutcome.noMatch(ConditionMessage.forCondition(ConditionalOnProperty.class, spec)
-					.didNotFind("property", "properties").items(Style.QUOTE, missingProperties));
+				.didNotFind("property", "properties")
+				.items(Style.QUOTE, missingProperties));
 		}
 		if (!nonMatchingProperties.isEmpty()) {
 			return ConditionOutcome.noMatch(ConditionMessage.forCondition(ConditionalOnProperty.class, spec)
-					.found("different value in property", "different value in properties")
-					.items(Style.QUOTE, nonMatchingProperties));
+				.found("different value in property", "different value in properties")
+				.items(Style.QUOTE, nonMatchingProperties));
 		}
 		return ConditionOutcome
-				.match(ConditionMessage.forCondition(ConditionalOnProperty.class, spec).because("matched"));
+			.match(ConditionMessage.forCondition(ConditionalOnProperty.class, spec).because("matched"));
 	}
 
 	private static class Spec {
 
 		private final String prefix;
 
-		private final String havingValue;
-
 		private final String[] names;
+
+		private final String havingValue;
 
 		private final boolean matchIfMissing;
 
 		Spec(AnnotationAttributes annotationAttributes) {
+			this.prefix = (!annotationAttributes.containsKey("prefix")) ? "" : getPrefix(annotationAttributes);
+			this.names = getNames(annotationAttributes);
+			this.havingValue = annotationAttributes.get("havingValue").toString();
+			this.matchIfMissing = annotationAttributes.getBoolean("matchIfMissing");
+		}
+
+		private String getPrefix(AnnotationAttributes annotationAttributes) {
 			String prefix = annotationAttributes.getString("prefix").trim();
 			if (StringUtils.hasText(prefix) && !prefix.endsWith(".")) {
 				prefix = prefix + ".";
 			}
-			this.prefix = prefix;
-			this.havingValue = annotationAttributes.getString("havingValue");
-			this.names = getNames(annotationAttributes);
-			this.matchIfMissing = annotationAttributes.getBoolean("matchIfMissing");
+			return prefix;
 		}
 
 		private String[] getNames(Map<String, Object> annotationAttributes) {

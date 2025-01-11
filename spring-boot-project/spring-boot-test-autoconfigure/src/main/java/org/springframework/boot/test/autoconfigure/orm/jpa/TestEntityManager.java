@@ -16,9 +16,9 @@
 
 package org.springframework.boot.test.autoconfigure.orm.jpa;
 
-import javax.persistence.EntityManager;
-import javax.persistence.EntityManagerFactory;
-import javax.persistence.PersistenceUnitUtil;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.PersistenceUnitUtil;
 
 import org.springframework.orm.jpa.EntityManagerFactoryUtils;
 import org.springframework.util.Assert;
@@ -234,7 +234,7 @@ public class TestEntityManager {
 	 */
 	public final EntityManager getEntityManager() {
 		EntityManager manager = EntityManagerFactoryUtils.getTransactionalEntityManager(this.entityManagerFactory);
-		Assert.state(manager != null, "No transactional EntityManager found, is your test running in a transactional?");
+		Assert.state(manager != null, "No transactional EntityManager found, is your test running in a transaction?");
 		return manager;
 	}
 

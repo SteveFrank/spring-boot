@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
+import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
@@ -34,23 +37,50 @@ import org.springframework.context.support.AbstractApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 
 /**
  * Tests for {@link SpringApplicationShutdownHook}.
  *
  * @author Phillip Webb
  * @author Andy Wilkinson
+ * @author Brian Clozel
  */
 class SpringApplicationShutdownHookTests {
 
 	@Test
 	void shutdownHookIsNotAddedUntilContextIsRegistered() {
 		TestSpringApplicationShutdownHook shutdownHook = new TestSpringApplicationShutdownHook();
+		shutdownHook.enableShutdownHookAddition();
 		assertThat(shutdownHook.isRuntimeShutdownHookAdded()).isFalse();
 		ConfigurableApplicationContext context = new GenericApplicationContext();
 		shutdownHook.registerApplicationContext(context);
+		assertThat(shutdownHook.isRuntimeShutdownHookAdded()).isTrue();
+	}
+
+	@Test
+	void shutdownHookIsNotAddedUntilHandlerIsRegistered() {
+		TestSpringApplicationShutdownHook shutdownHook = new TestSpringApplicationShutdownHook();
+		shutdownHook.enableShutdownHookAddition();
+		assertThat(shutdownHook.isRuntimeShutdownHookAdded()).isFalse();
+		shutdownHook.getHandlers().add(() -> {
+		});
+		assertThat(shutdownHook.isRuntimeShutdownHookAdded()).isTrue();
+	}
+
+	@Test
+	void shutdownHookIsNotAddedUntilAdditionIsEnabled() {
+		TestSpringApplicationShutdownHook shutdownHook = new TestSpringApplicationShutdownHook();
+		shutdownHook.getHandlers().add(() -> {
+		});
+		assertThat(shutdownHook.isRuntimeShutdownHookAdded()).isFalse();
+		shutdownHook.enableShutdownHookAddition();
+		shutdownHook.getHandlers().add(() -> {
+		});
 		assertThat(shutdownHook.isRuntimeShutdownHookAdded()).isTrue();
 	}
 
@@ -86,8 +116,8 @@ class SpringApplicationShutdownHookTests {
 		closing.await();
 		Thread shutdownThread = new Thread(shutdownHook);
 		shutdownThread.start();
-		// Shutdown thread should become blocked on monitor held by context thread
-		Awaitility.await().atMost(Duration.ofSeconds(30)).until(shutdownThread::getState, State.BLOCKED::equals);
+		// Shutdown thread should start waiting for context to become inactive
+		Awaitility.await().atMost(Duration.ofSeconds(30)).until(shutdownThread::getState, State.WAITING::equals);
 		// Allow context thread to proceed, unblocking shutdown thread
 		proceedWithClose.countDown();
 		contextThread.join();
@@ -97,7 +127,7 @@ class SpringApplicationShutdownHookTests {
 	}
 
 	@Test
-	void runDueToExitDuringRefreshWhenContextHasBeenClosedDoesNotDeadlock() throws InterruptedException {
+	void runDueToExitDuringRefreshWhenContextHasBeenClosedDoesNotDeadlock() {
 		GenericApplicationContext context = new GenericApplicationContext();
 		TestSpringApplicationShutdownHook shutdownHook = new TestSpringApplicationShutdownHook();
 		shutdownHook.registerApplicationContext(context);
@@ -125,7 +155,7 @@ class SpringApplicationShutdownHookTests {
 	void addHandlerActionWhenNullThrowsException() {
 		TestSpringApplicationShutdownHook shutdownHook = new TestSpringApplicationShutdownHook();
 		assertThatIllegalArgumentException().isThrownBy(() -> shutdownHook.getHandlers().add(null))
-				.withMessage("Action must not be null");
+			.withMessage("Action must not be null");
 	}
 
 	@Test
@@ -134,14 +164,14 @@ class SpringApplicationShutdownHookTests {
 		shutdownHook.run();
 		Runnable handlerAction = new TestHandlerAction(new ArrayList<>());
 		assertThatIllegalStateException().isThrownBy(() -> shutdownHook.getHandlers().add(handlerAction))
-				.withMessage("Shutdown in progress");
+			.withMessage("Shutdown in progress");
 	}
 
 	@Test
 	void removeHandlerActionWhenNullThrowsException() {
 		TestSpringApplicationShutdownHook shutdownHook = new TestSpringApplicationShutdownHook();
 		assertThatIllegalArgumentException().isThrownBy(() -> shutdownHook.getHandlers().remove(null))
-				.withMessage("Action must not be null");
+			.withMessage("Action must not be null");
 	}
 
 	@Test
@@ -151,7 +181,46 @@ class SpringApplicationShutdownHookTests {
 		shutdownHook.getHandlers().add(handlerAction);
 		shutdownHook.run();
 		assertThatIllegalStateException().isThrownBy(() -> shutdownHook.getHandlers().remove(handlerAction))
-				.withMessage("Shutdown in progress");
+			.withMessage("Shutdown in progress");
+	}
+
+	@Test
+	void failsWhenDeregisterActiveContext() {
+		TestSpringApplicationShutdownHook shutdownHook = new TestSpringApplicationShutdownHook();
+		ConfigurableApplicationContext context = new GenericApplicationContext();
+		shutdownHook.registerApplicationContext(context);
+		context.refresh();
+		assertThatIllegalStateException().isThrownBy(() -> shutdownHook.deregisterFailedApplicationContext(context));
+		assertThat(shutdownHook.isApplicationContextRegistered(context)).isTrue();
+	}
+
+	@Test
+	void deregistersFailedContext() {
+		TestSpringApplicationShutdownHook shutdownHook = new TestSpringApplicationShutdownHook();
+		GenericApplicationContext context = new GenericApplicationContext();
+		shutdownHook.registerApplicationContext(context);
+		context.registerBean(FailingBean.class);
+		assertThatExceptionOfType(BeanCreationException.class).isThrownBy(context::refresh);
+		assertThat(shutdownHook.isApplicationContextRegistered(context)).isTrue();
+		shutdownHook.deregisterFailedApplicationContext(context);
+		assertThat(shutdownHook.isApplicationContextRegistered(context)).isFalse();
+	}
+
+	@Test
+	void handlersRunInDeterministicOrderFromLastRegisteredToFirst() {
+		TestSpringApplicationShutdownHook shutdownHook = new TestSpringApplicationShutdownHook();
+		Runnable r1 = mock(Runnable.class);
+		Runnable r2 = mock(Runnable.class);
+		Runnable r3 = mock(Runnable.class);
+		shutdownHook.getHandlers().add(r2);
+		shutdownHook.getHandlers().add(r1);
+		shutdownHook.getHandlers().add(r3);
+		shutdownHook.run();
+		InOrder ordered = inOrder(r1, r2, r3);
+		ordered.verify(r3).run();
+		ordered.verify(r1).run();
+		ordered.verify(r2).run();
+		ordered.verifyNoMoreInteractions();
 	}
 
 	static class TestSpringApplicationShutdownHook extends SpringApplicationShutdownHook {
@@ -204,7 +273,7 @@ class SpringApplicationShutdownHookTests {
 			}
 			if (this.proceedWithClose != null) {
 				try {
-					this.proceedWithClose.await();
+					this.proceedWithClose.await(1, TimeUnit.MINUTES);
 				}
 				catch (InterruptedException ex) {
 					Thread.currentThread().interrupt();
@@ -255,6 +324,15 @@ class SpringApplicationShutdownHookTests {
 			thread.start();
 			thread.join(15000);
 			assertThat(thread.isAlive()).isFalse();
+		}
+
+	}
+
+	static class FailingBean implements InitializingBean {
+
+		@Override
+		public void afterPropertiesSet() throws Exception {
+			throw new IllegalArgumentException("test failure");
 		}
 
 	}

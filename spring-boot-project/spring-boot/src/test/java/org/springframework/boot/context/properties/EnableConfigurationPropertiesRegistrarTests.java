@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,17 +23,15 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
-import org.springframework.beans.factory.support.RootBeanDefinition;
-import org.springframework.boot.context.properties.ConfigurationPropertiesBean.BindMethod;
+import org.springframework.boot.context.properties.bind.BindMethod;
 import org.springframework.core.type.AnnotationMetadata;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 
 /**
  * Tests for {@link EnableConfigurationPropertiesRegistrar}.
@@ -57,38 +55,38 @@ class EnableConfigurationPropertiesRegistrarTests {
 	void typeWithDefaultConstructorShouldRegisterRootBeanDefinition() {
 		register(TestConfiguration.class);
 		BeanDefinition definition = this.beanFactory
-				.getBeanDefinition("foo-" + getClass().getName() + "$FooProperties");
-		assertThat(definition).satisfies(configurationPropertiesBeanDefinition(BindMethod.JAVA_BEAN));
+			.getBeanDefinition("foo-" + getClass().getName() + "$FooProperties");
+		assertThat(definition).satisfies(hasBindMethod(BindMethod.JAVA_BEAN));
 	}
 
 	@Test
-	void typeWithConstructorBindingShouldRegisterConfigurationPropertiesBeanDefinition() {
+	void constructorBoundPropertiesShouldRegisterConfigurationPropertiesBeanDefinition() {
 		register(TestConfiguration.class);
 		BeanDefinition definition = this.beanFactory
-				.getBeanDefinition("bar-" + getClass().getName() + "$BarProperties");
-		assertThat(definition).satisfies(configurationPropertiesBeanDefinition(BindMethod.VALUE_OBJECT));
+			.getBeanDefinition("bar-" + getClass().getName() + "$BarProperties");
+		assertThat(definition).satisfies(hasBindMethod(BindMethod.VALUE_OBJECT));
 	}
 
 	@Test
 	void typeWithMultipleConstructorsShouldRegisterGenericBeanDefinition() {
 		register(TestConfiguration.class);
 		BeanDefinition definition = this.beanFactory
-				.getBeanDefinition("bing-" + getClass().getName() + "$BingProperties");
-		assertThat(definition).satisfies(configurationPropertiesBeanDefinition(BindMethod.JAVA_BEAN));
+			.getBeanDefinition("bing-" + getClass().getName() + "$BingProperties");
+		assertThat(definition).satisfies(hasBindMethod(BindMethod.JAVA_BEAN));
 	}
 
 	@Test
 	void typeWithNoAnnotationShouldFail() {
 		assertThatIllegalStateException().isThrownBy(() -> register(InvalidConfiguration.class))
-				.withMessageContaining("No ConfigurationProperties annotation found")
-				.withMessageContaining(EnableConfigurationPropertiesRegistrar.class.getName());
+			.withMessageContaining("No ConfigurationProperties annotation found")
+			.withMessageContaining(EnableConfigurationPropertiesRegistrar.class.getName());
 	}
 
 	@Test
 	void registrationWithDuplicatedTypeShouldRegisterSingleBeanDefinition() {
 		register(DuplicateConfiguration.class);
 		String name = "foo-" + getClass().getName() + "$FooProperties";
-		verify(this.beanFactory, times(1)).registerBeanDefinition(eq(name), any());
+		then(this.beanFactory).should().registerBeanDefinition(eq(name), any());
 	}
 
 	@Test
@@ -100,9 +98,8 @@ class EnableConfigurationPropertiesRegistrarTests {
 		}
 	}
 
-	private Consumer<BeanDefinition> configurationPropertiesBeanDefinition(BindMethod bindMethod) {
+	private Consumer<BeanDefinition> hasBindMethod(BindMethod bindMethod) {
 		return (definition) -> {
-			assertThat(definition).isExactlyInstanceOf(RootBeanDefinition.class);
 			assertThat(definition.hasAttribute(BindMethod.class.getName())).isTrue();
 			assertThat(definition.getAttribute(BindMethod.class.getName())).isEqualTo(bindMethod);
 		};
@@ -138,7 +135,6 @@ class EnableConfigurationPropertiesRegistrarTests {
 
 	}
 
-	@ConstructorBinding
 	@ConfigurationProperties(prefix = "bar")
 	static class BarProperties {
 

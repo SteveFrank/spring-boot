@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2020 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,16 +41,14 @@ public class CacheProperties {
 	private CacheType type;
 
 	/**
-	 * Comma-separated list of cache names to create if supported by the underlying cache
-	 * manager. Usually, this disables the ability to create additional caches on-the-fly.
+	 * List of cache names to create if supported by the underlying cache manager.
+	 * Usually, this disables the ability to create additional caches on-the-fly.
 	 */
 	private List<String> cacheNames = new ArrayList<>();
 
 	private final Caffeine caffeine = new Caffeine();
 
 	private final Couchbase couchbase = new Couchbase();
-
-	private final EhCache ehcache = new EhCache();
 
 	private final Infinispan infinispan = new Infinispan();
 
@@ -80,10 +78,6 @@ public class CacheProperties {
 
 	public Couchbase getCouchbase() {
 		return this.couchbase;
-	}
-
-	public EhCache getEhcache() {
-		return this.ehcache;
 	}
 
 	public Infinispan getInfinispan() {
@@ -152,26 +146,6 @@ public class CacheProperties {
 
 		public void setExpiration(Duration expiration) {
 			this.expiration = expiration;
-		}
-
-	}
-
-	/**
-	 * EhCache specific cache properties.
-	 */
-	public static class EhCache {
-
-		/**
-		 * The location of the configuration file to use to initialize EhCache.
-		 */
-		private Resource config;
-
-		public Resource getConfig() {
-			return this.config;
-		}
-
-		public void setConfig(Resource config) {
-			this.config = config;
 		}
 
 	}

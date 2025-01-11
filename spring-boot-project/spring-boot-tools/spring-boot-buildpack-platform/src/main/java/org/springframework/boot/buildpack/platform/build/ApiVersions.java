@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2020 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@
 package org.springframework.boot.buildpack.platform.build;
 
 import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
+import org.springframework.boot.buildpack.platform.docker.type.ApiVersion;
 import org.springframework.util.StringUtils;
 
 /**
@@ -32,7 +32,7 @@ final class ApiVersions {
 	/**
 	 * The platform API versions supported by this release.
 	 */
-	static final ApiVersions SUPPORTED_PLATFORMS = new ApiVersions(ApiVersion.of(0, 3), ApiVersion.of(0, 4));
+	static final ApiVersions SUPPORTED_PLATFORMS = ApiVersions.of(0, IntStream.rangeClosed(3, 14));
 
 	private final ApiVersion[] apiVersions;
 
@@ -91,8 +91,12 @@ final class ApiVersions {
 	 * @throws IllegalArgumentException if any values could not be parsed
 	 */
 	static ApiVersions parse(String... values) {
-		List<ApiVersion> versions = Arrays.stream(values).map(ApiVersion::parse).collect(Collectors.toList());
-		return new ApiVersions(versions.toArray(new ApiVersion[] {}));
+		return new ApiVersions(Arrays.stream(values).map(ApiVersion::parse).toArray(ApiVersion[]::new));
+	}
+
+	static ApiVersions of(int major, IntStream minorsInclusive) {
+		return new ApiVersions(
+				minorsInclusive.mapToObj((minor) -> ApiVersion.of(major, minor)).toArray(ApiVersion[]::new));
 	}
 
 }

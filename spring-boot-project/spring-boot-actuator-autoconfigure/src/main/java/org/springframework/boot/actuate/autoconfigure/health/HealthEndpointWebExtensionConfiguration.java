@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 import org.glassfish.jersey.server.ResourceConfig;
 import org.glassfish.jersey.server.model.Resource;
@@ -71,14 +70,17 @@ class HealthEndpointWebExtensionConfiguration {
 	@Bean
 	@ConditionalOnMissingBean
 	HealthEndpointWebExtension healthEndpointWebExtension(HealthContributorRegistry healthContributorRegistry,
-			HealthEndpointGroups groups) {
-		return new HealthEndpointWebExtension(healthContributorRegistry, groups);
+			HealthEndpointGroups groups, HealthEndpointProperties properties) {
+		return new HealthEndpointWebExtension(healthContributorRegistry, groups,
+				properties.getLogging().getSlowIndicatorThreshold());
 	}
 
 	private static ExposableWebEndpoint getHealthEndpoint(WebEndpointsSupplier webEndpointsSupplier) {
 		Collection<ExposableWebEndpoint> webEndpoints = webEndpointsSupplier.getEndpoints();
-		return webEndpoints.stream().filter((endpoint) -> endpoint.getEndpointId().equals(HealthEndpoint.ID))
-				.findFirst().get();
+		return webEndpoints.stream()
+			.filter((endpoint) -> endpoint.getEndpointId().equals(HealthEndpoint.ID))
+			.findFirst()
+			.orElse(null);
 	}
 
 	@ConditionalOnBean(DispatcherServlet.class)
@@ -112,7 +114,7 @@ class HealthEndpointWebExtensionConfiguration {
 		static class JerseyInfrastructureConfiguration {
 
 			@Bean
-			@ConditionalOnMissingBean(JerseyApplicationPath.class)
+			@ConditionalOnMissingBean
 			JerseyApplicationPath jerseyApplicationPath(JerseyProperties properties, ResourceConfig config) {
 				return new DefaultJerseyApplicationPath(properties.getApplicationPath(), config);
 			}
@@ -157,8 +159,11 @@ class HealthEndpointWebExtensionConfiguration {
 			JerseyHealthEndpointAdditionalPathResourceFactory resourceFactory = new JerseyHealthEndpointAdditionalPathResourceFactory(
 					WebServerNamespace.SERVER, this.groups);
 			Collection<Resource> endpointResources = resourceFactory
-					.createEndpointResources(mapping, Collections.singletonList(this.endpoint), null, null, false)
-					.stream().filter(Objects::nonNull).collect(Collectors.toList());
+				.createEndpointResources(mapping,
+						(this.endpoint != null) ? Collections.singletonList(this.endpoint) : Collections.emptyList())
+				.stream()
+				.filter(Objects::nonNull)
+				.toList();
 			register(endpointResources, config);
 		}
 

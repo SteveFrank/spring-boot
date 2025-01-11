@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +22,9 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
-import java.util.function.Supplier;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
-import org.springframework.boot.testsupport.BuildOutput;
 import org.springframework.util.FileSystemUtils;
 import org.springframework.util.StreamUtils;
 
@@ -38,16 +36,16 @@ import org.springframework.util.StreamUtils;
  */
 class ExplodedApplicationLauncher extends AbstractApplicationLauncher {
 
-	private final Supplier<File> exploded;
+	private final File exploded;
 
-	ExplodedApplicationLauncher(Application application, BuildOutput buildOutput) {
-		super(application, buildOutput);
-		this.exploded = () -> new File(buildOutput.getRootLocation(), "exploded");
+	ExplodedApplicationLauncher(Application application, File outputLocation) {
+		super(application, outputLocation);
+		this.exploded = new File(outputLocation, "exploded");
 	}
 
 	@Override
 	protected File getWorkingDirectory() {
-		return this.exploded.get();
+		return this.exploded;
 	}
 
 	@Override
@@ -57,12 +55,11 @@ class ExplodedApplicationLauncher extends AbstractApplicationLauncher {
 
 	@Override
 	protected List<String> getArguments(File archive, File serverPortFile) {
-		String mainClass = (archive.getName().endsWith(".war") ? "org.springframework.boot.loader.WarLauncher"
-				: "org.springframework.boot.loader.JarLauncher");
+		String mainClass = (archive.getName().endsWith(".war") ? "org.springframework.boot.loader.launch.WarLauncher"
+				: "org.springframework.boot.loader.launch.JarLauncher");
 		try {
 			explodeArchive(archive);
-			return Arrays.asList("-cp", this.exploded.get().getAbsolutePath(), mainClass,
-					serverPortFile.getAbsolutePath());
+			return Arrays.asList("-cp", this.exploded.getAbsolutePath(), mainClass, serverPortFile.getAbsolutePath());
 		}
 		catch (IOException ex) {
 			throw new RuntimeException(ex);
@@ -70,12 +67,12 @@ class ExplodedApplicationLauncher extends AbstractApplicationLauncher {
 	}
 
 	private void explodeArchive(File archive) throws IOException {
-		FileSystemUtils.deleteRecursively(this.exploded.get());
+		FileSystemUtils.deleteRecursively(this.exploded);
 		JarFile jarFile = new JarFile(archive);
 		Enumeration<JarEntry> entries = jarFile.entries();
 		while (entries.hasMoreElements()) {
 			JarEntry jarEntry = entries.nextElement();
-			File extracted = new File(this.exploded.get(), jarEntry.getName());
+			File extracted = new File(this.exploded, jarEntry.getName());
 			if (jarEntry.isDirectory()) {
 				extracted.mkdirs();
 			}

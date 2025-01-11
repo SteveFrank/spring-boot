@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,9 @@ import org.springframework.core.io.support.SpringFactoriesLoader;
 
 /**
  * Listener for the {@link SpringApplication} {@code run} method.
- * {@link SpringApplicationRunListener}s are loaded via the {@link SpringFactoriesLoader}
- * and should declare a public constructor that accepts a {@link SpringApplication}
- * instance and a {@code String[]} of arguments. A new
+ * {@link SpringApplicationRunListener}s are loaded through the
+ * {@link SpringFactoriesLoader} and should declare a public constructor that accepts a
+ * {@link SpringApplication} instance and a {@code String[]} of arguments. A new
  * {@link SpringApplicationRunListener} instance will be created for each run.
  *
  * @author Phillip Webb
@@ -81,20 +81,6 @@ public interface SpringApplicationRunListener {
 	 * @since 2.6.0
 	 */
 	default void started(ConfigurableApplicationContext context, Duration timeTaken) {
-		started(context);
-	}
-
-	/**
-	 * The context has been refreshed and the application has started but
-	 * {@link CommandLineRunner CommandLineRunners} and {@link ApplicationRunner
-	 * ApplicationRunners} have not been called.
-	 * @param context the application context.
-	 * @since 2.0.0
-	 * @deprecated since 2.6.0 for removal in 2.8.0 in favor of
-	 * {@link #started(ConfigurableApplicationContext, Duration)}
-	 */
-	@Deprecated
-	default void started(ConfigurableApplicationContext context) {
 	}
 
 	/**
@@ -107,20 +93,6 @@ public interface SpringApplicationRunListener {
 	 * @since 2.6.0
 	 */
 	default void ready(ConfigurableApplicationContext context, Duration timeTaken) {
-		running(context);
-	}
-
-	/**
-	 * Called immediately before the run method finishes, when the application context has
-	 * been refreshed and all {@link CommandLineRunner CommandLineRunners} and
-	 * {@link ApplicationRunner ApplicationRunners} have been called.
-	 * @param context the application context.
-	 * @since 2.0.0
-	 * @deprecated since 2.6.0 for removal in 2.8.0 in favor of
-	 * {@link #ready(ConfigurableApplicationContext, Duration)}
-	 */
-	@Deprecated
-	default void running(ConfigurableApplicationContext context) {
 	}
 
 	/**

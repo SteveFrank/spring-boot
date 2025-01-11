@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,8 @@ package org.springframework.boot.validation;
 
 import java.util.Locale;
 
-import javax.validation.MessageInterpolator;
-import javax.validation.MessageInterpolator.Context;
-
+import jakarta.validation.MessageInterpolator;
+import jakarta.validation.MessageInterpolator.Context;
 import org.junit.jupiter.api.Test;
 
 import org.springframework.context.support.StaticMessageSource;
@@ -34,6 +33,7 @@ import static org.mockito.Mockito.mock;
  *
  * @author Dmytro Nosan
  * @author Andy Wilkinson
+ * @author Scott Frederick
  */
 class MessageSourceMessageInterpolatorTests {
 
@@ -55,7 +55,15 @@ class MessageSourceMessageInterpolatorTests {
 	void interpolateWhenParametersAreUnknownShouldLeaveThemUnchanged() {
 		this.messageSource.addMessage("top", Locale.getDefault(), "{child}+{child}");
 		assertThat(this.interpolator.interpolate("{foo}{top}{bar}", this.context))
-				.isEqualTo("{foo}{child}+{child}{bar}");
+			.isEqualTo("{foo}{child}+{child}{bar}");
+	}
+
+	@Test
+	void interpolateWhenParametersAreUnknownUsingCodeAsDefaultShouldLeaveThemUnchanged() {
+		this.messageSource.setUseCodeAsDefaultMessage(true);
+		this.messageSource.addMessage("top", Locale.getDefault(), "{child}+{child}");
+		assertThat(this.interpolator.interpolate("{foo}{top}{bar}", this.context))
+			.isEqualTo("{foo}{child}+{child}{bar}");
 	}
 
 	@Test
@@ -99,7 +107,7 @@ class MessageSourceMessageInterpolatorTests {
 		this.messageSource.addMessage("b", Locale.getDefault(), "{c}");
 		this.messageSource.addMessage("c", Locale.getDefault(), "{a}");
 		assertThatIllegalArgumentException().isThrownBy(() -> this.interpolator.interpolate("{a}", this.context))
-				.withMessage("Circular reference '{a -> b -> c -> a}'");
+			.withMessage("Circular reference '{a -> b -> c -> a}'");
 	}
 
 	private static final class IdentityMessageInterpolator implements MessageInterpolator {

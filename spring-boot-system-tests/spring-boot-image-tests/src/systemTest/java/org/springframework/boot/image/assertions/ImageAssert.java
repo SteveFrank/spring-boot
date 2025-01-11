@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,11 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.function.Consumer;
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.utils.IOUtils;
 import org.assertj.core.api.AbstractAssert;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.ListAssert;
@@ -32,6 +34,7 @@ import org.assertj.core.api.ListAssert;
 import org.springframework.boot.buildpack.platform.docker.DockerApi;
 import org.springframework.boot.buildpack.platform.docker.type.ImageReference;
 import org.springframework.boot.buildpack.platform.docker.type.Layer;
+import org.springframework.boot.test.json.JsonContentAssert;
 
 /**
  * AssertJ {@link org.assertj.core.api.Assert} for Docker image contents.
@@ -47,11 +50,11 @@ public class ImageAssert extends AbstractAssert<ImageAssert, ImageReference> {
 		getLayers();
 	}
 
-	public LayerContentAssert hasLayer(String layerDigest) {
+	public void layer(String layerDigest, Consumer<LayerContentAssert> assertConsumer) {
 		if (!this.layers.containsKey(layerDigest)) {
 			failWithMessage("Layer with digest '%s' not found in image", layerDigest);
 		}
-		return new LayerContentAssert(this.layers.get(layerDigest));
+		assertConsumer.accept(new LayerContentAssert(this.layers.get(layerDigest)));
 	}
 
 	private void getLayers() throws IOException {
@@ -70,20 +73,50 @@ public class ImageAssert extends AbstractAssert<ImageAssert, ImageReference> {
 			super(layer, LayerContentAssert.class);
 		}
 
-		public ListAssert<String> entries() throws IOException {
+		public ListAssert<String> entries() {
 			List<String> entryNames = new ArrayList<>();
-			ByteArrayOutputStream out = new ByteArrayOutputStream();
-			this.actual.writeTo(out);
-			try (TarArchiveInputStream in = new TarArchiveInputStream(new ByteArrayInputStream(out.toByteArray()))) {
-				TarArchiveEntry entry = in.getNextTarEntry();
-				while (entry != null) {
-					if (!entry.isDirectory()) {
-						entryNames.add(entry.getName().replaceFirst("^/workspace/", ""));
+			try {
+				ByteArrayOutputStream out = new ByteArrayOutputStream();
+				this.actual.writeTo(out);
+				try (TarArchiveInputStream in = new TarArchiveInputStream(
+						new ByteArrayInputStream(out.toByteArray()))) {
+					TarArchiveEntry entry = in.getNextEntry();
+					while (entry != null) {
+						if (!entry.isDirectory()) {
+							entryNames.add(entry.getName().replaceFirst("^/workspace/", ""));
+						}
+						entry = in.getNextEntry();
 					}
-					entry = in.getNextTarEntry();
 				}
 			}
+			catch (IOException ex) {
+				failWithMessage("IOException while reading image layer archive: '%s'", ex.getMessage());
+			}
 			return Assertions.assertThat(entryNames);
+		}
+
+		public void jsonEntry(String name, Consumer<JsonContentAssert> assertConsumer) {
+			try {
+				ByteArrayOutputStream out = new ByteArrayOutputStream();
+				this.actual.writeTo(out);
+				try (TarArchiveInputStream in = new TarArchiveInputStream(
+						new ByteArrayInputStream(out.toByteArray()))) {
+					TarArchiveEntry entry = in.getNextEntry();
+					while (entry != null) {
+						if (entry.getName().equals(name)) {
+							ByteArrayOutputStream entryOut = new ByteArrayOutputStream();
+							IOUtils.copy(in, entryOut);
+							assertConsumer.accept(new JsonContentAssert(LayerContentAssert.class, entryOut.toString()));
+							return;
+						}
+						entry = in.getNextEntry();
+					}
+				}
+				failWithMessage("Expected JSON entry '%s' in layer with digest '%s'", name, this.actual.getId());
+			}
+			catch (IOException ex) {
+				failWithMessage("IOException while reading image layer archive: '%s'", ex.getMessage());
+			}
 		}
 
 	}

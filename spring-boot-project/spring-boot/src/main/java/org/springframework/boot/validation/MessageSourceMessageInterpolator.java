@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,16 +20,17 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 
-import javax.validation.MessageInterpolator;
+import jakarta.validation.MessageInterpolator;
 
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 
 /**
- * Resolves any message parameters via {@link MessageSource} and then interpolates a
+ * Resolves any message parameters through {@link MessageSource} and then interpolates a
  * message using the underlying {@link MessageInterpolator}.
  *
  * @author Dmytro Nosan
+ * @author Scott Frederick
  */
 class MessageSourceMessageInterpolator implements MessageInterpolator {
 
@@ -115,7 +116,12 @@ class MessageSourceMessageInterpolator implements MessageInterpolator {
 	private String replaceParameter(String parameter, Locale locale, Set<String> visitedParameters) {
 		parameter = replaceParameters(parameter, locale, visitedParameters);
 		String value = this.messageSource.getMessage(parameter, null, null, locale);
-		return (value != null) ? replaceParameters(value, locale, visitedParameters) : null;
+		return (value != null && !isUsingCodeAsDefaultMessage(value, parameter))
+				? replaceParameters(value, locale, visitedParameters) : null;
+	}
+
+	private boolean isUsingCodeAsDefaultMessage(String value, String parameter) {
+		return value.equals(parameter);
 	}
 
 }

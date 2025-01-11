@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.springframework.boot.jdbc.init;
 
+import java.util.Collections;
 import java.util.UUID;
 
 import javax.sql.DataSource;
@@ -29,8 +30,11 @@ import org.springframework.boot.sql.init.AbstractScriptDatabaseInitializerTests;
 import org.springframework.boot.sql.init.DatabaseInitializationSettings;
 import org.springframework.boot.testsupport.BuildOutput;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.jdbc.datasource.init.ScriptStatementFailedException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
  * Tests for {@link DataSourceScriptDatabaseInitializer}.
@@ -40,13 +44,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DataSourceScriptDatabaseInitializerTests
 		extends AbstractScriptDatabaseInitializerTests<DataSourceScriptDatabaseInitializer> {
 
-	private final HikariDataSource embeddedDataSource = DataSourceBuilder.create().type(HikariDataSource.class)
-			.url("jdbc:h2:mem:" + UUID.randomUUID()).build();
+	private final HikariDataSource embeddedDataSource = DataSourceBuilder.create()
+		.type(HikariDataSource.class)
+		.url("jdbc:h2:mem:" + UUID.randomUUID())
+		.build();
 
-	private final HikariDataSource standaloneDataSource = DataSourceBuilder.create().type(HikariDataSource.class)
-			.url("jdbc:h2:file:" + new BuildOutput(DataSourceScriptDatabaseInitializerTests.class).getRootLocation()
-					.getAbsolutePath() + "/" + UUID.randomUUID())
-			.build();
+	private final HikariDataSource standaloneDataSource = DataSourceBuilder.create()
+		.type(HikariDataSource.class)
+		.url("jdbc:h2:file:"
+				+ new BuildOutput(DataSourceScriptDatabaseInitializerTests.class).getRootLocation().getAbsolutePath()
+				+ "/" + UUID.randomUUID())
+		.build();
 
 	@AfterEach
 	void closeDataSource() {
@@ -59,6 +67,22 @@ class DataSourceScriptDatabaseInitializerTests
 		DataSourceScriptDatabaseInitializer initializer = new DataSourceScriptDatabaseInitializer(
 				new HikariDataSource(), new DatabaseInitializationSettings());
 		assertThat(initializer.isEmbeddedDatabase()).isFalse();
+	}
+
+	@Test
+	void whenCustomizeIsOverriddenThenDatabasePopulatorIsConfiguredAccordingly() {
+		DatabaseInitializationSettings settings = new DatabaseInitializationSettings();
+		settings.setContinueOnError(true);
+		settings.setDataLocations(Collections.singletonList("data.sql"));
+		DataSourceScriptDatabaseInitializer initializer = new DataSourceScriptDatabaseInitializer(
+				this.embeddedDataSource, settings) {
+			@Override
+			protected void customize(ResourceDatabasePopulator populator) {
+				assertThat(populator).hasFieldOrPropertyWithValue("continueOnError", true);
+				populator.setContinueOnError(false);
+			}
+		};
+		assertThatExceptionOfType(ScriptStatementFailedException.class).isThrownBy(initializer::initializeDatabase);
 	}
 
 	@Override

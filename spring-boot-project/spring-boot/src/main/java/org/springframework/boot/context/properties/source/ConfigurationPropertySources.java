@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,14 +87,17 @@ public final class ConfigurationPropertySources {
 		Assert.isInstanceOf(ConfigurableEnvironment.class, environment);
 		MutablePropertySources sources = ((ConfigurableEnvironment) environment).getPropertySources();
 		PropertySource<?> attached = getAttached(sources);
-		if (attached != null && attached.getSource() != sources) {
-			sources.remove(ATTACHED_PROPERTY_SOURCE_NAME);
-			attached = null;
+		if (!isUsingSources(attached, sources)) {
+			attached = new ConfigurationPropertySourcesPropertySource(ATTACHED_PROPERTY_SOURCE_NAME,
+					new SpringConfigurationPropertySources(sources));
 		}
-		if (attached == null) {
-			sources.addFirst(new ConfigurationPropertySourcesPropertySource(ATTACHED_PROPERTY_SOURCE_NAME,
-					new SpringConfigurationPropertySources(sources)));
-		}
+		sources.remove(ATTACHED_PROPERTY_SOURCE_NAME);
+		sources.addFirst(attached);
+	}
+
+	private static boolean isUsingSources(PropertySource<?> attached, MutablePropertySources sources) {
+		return attached instanceof ConfigurationPropertySourcesPropertySource
+				&& ((SpringConfigurationPropertySources) attached.getSource()).isUsingSources(sources);
 	}
 
 	static PropertySource<?> getAttached(MutablePropertySources sources) {
@@ -114,7 +117,7 @@ public final class ConfigurationPropertySources {
 		Assert.isInstanceOf(ConfigurableEnvironment.class, environment);
 		MutablePropertySources sources = ((ConfigurableEnvironment) environment).getPropertySources();
 		ConfigurationPropertySourcesPropertySource attached = (ConfigurationPropertySourcesPropertySource) sources
-				.get(ATTACHED_PROPERTY_SOURCE_NAME);
+			.get(ATTACHED_PROPERTY_SOURCE_NAME);
 		if (attached == null) {
 			return from(sources);
 		}
@@ -150,13 +153,14 @@ public final class ConfigurationPropertySources {
 	}
 
 	private static Stream<PropertySource<?>> streamPropertySources(PropertySources sources) {
-		return sources.stream().flatMap(ConfigurationPropertySources::flatten)
-				.filter(ConfigurationPropertySources::isIncluded);
+		return sources.stream()
+			.flatMap(ConfigurationPropertySources::flatten)
+			.filter(ConfigurationPropertySources::isIncluded);
 	}
 
 	private static Stream<PropertySource<?>> flatten(PropertySource<?> source) {
-		if (source.getSource() instanceof ConfigurableEnvironment) {
-			return streamPropertySources(((ConfigurableEnvironment) source.getSource()).getPropertySources());
+		if (source.getSource() instanceof ConfigurableEnvironment configurableEnvironment) {
+			return streamPropertySources(configurableEnvironment.getPropertySources());
 		}
 		return Stream.of(source);
 	}

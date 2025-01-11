@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
 
 package org.springframework.boot.autoconfigure.jdbc;
 
-import java.nio.charset.Charset;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -28,7 +26,6 @@ import org.springframework.beans.factory.BeanClassLoaderAware;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.context.properties.DeprecatedConfigurationProperty;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.boot.jdbc.DatabaseDriver;
 import org.springframework.boot.jdbc.EmbeddedDatabaseConnection;
@@ -64,8 +61,8 @@ public class DataSourceProperties implements BeanClassLoaderAware, InitializingB
 	private String name;
 
 	/**
-	 * Fully qualified name of the connection pool implementation to use. By default, it
-	 * is auto-detected from the classpath.
+	 * Fully qualified name of the DataSource implementation to use. By default, a
+	 * connection pool implementation is auto-detected from the classpath.
 	 */
 	private Class<? extends DataSource> type;
 
@@ -96,73 +93,6 @@ public class DataSourceProperties implements BeanClassLoaderAware, InitializingB
 	private String jndiName;
 
 	/**
-	 * Mode to apply when determining if DataSource initialization should be performed
-	 * using the available DDL and DML scripts.
-	 */
-	@Deprecated
-	private org.springframework.boot.jdbc.DataSourceInitializationMode initializationMode = org.springframework.boot.jdbc.DataSourceInitializationMode.EMBEDDED;
-
-	/**
-	 * Platform to use in the DDL or DML scripts (such as schema-${platform}.sql or
-	 * data-${platform}.sql).
-	 */
-	@Deprecated
-	private String platform = "all";
-
-	/**
-	 * Schema (DDL) script resource references.
-	 */
-	private List<String> schema;
-
-	/**
-	 * Username of the database to execute DDL scripts (if different).
-	 */
-	@Deprecated
-	private String schemaUsername;
-
-	/**
-	 * Password of the database to execute DDL scripts (if different).
-	 */
-	@Deprecated
-	private String schemaPassword;
-
-	/**
-	 * Data (DML) script resource references.
-	 */
-	@Deprecated
-	private List<String> data;
-
-	/**
-	 * Username of the database to execute DML scripts (if different).
-	 */
-	@Deprecated
-	private String dataUsername;
-
-	/**
-	 * Password of the database to execute DML scripts (if different).
-	 */
-	@Deprecated
-	private String dataPassword;
-
-	/**
-	 * Whether to stop if an error occurs while initializing the database.
-	 */
-	@Deprecated
-	private boolean continueOnError = false;
-
-	/**
-	 * Statement separator in SQL initialization scripts.
-	 */
-	@Deprecated
-	private String separator = ";";
-
-	/**
-	 * SQL scripts encoding.
-	 */
-	@Deprecated
-	private Charset sqlScriptEncoding;
-
-	/**
 	 * Connection details for an embedded database. Defaults to the most suitable embedded
 	 * database that is available on the classpath.
 	 */
@@ -190,8 +120,12 @@ public class DataSourceProperties implements BeanClassLoaderAware, InitializingB
 	 * this instance
 	 */
 	public DataSourceBuilder<?> initializeDataSourceBuilder() {
-		return DataSourceBuilder.create(getClassLoader()).type(getType()).driverClassName(determineDriverClassName())
-				.url(determineUrl()).username(determineUsername()).password(determinePassword());
+		return DataSourceBuilder.create(getClassLoader())
+			.type(getType())
+			.driverClassName(determineDriverClassName())
+			.url(determineUrl())
+			.username(determineUsername())
+			.password(determinePassword());
 	}
 
 	public boolean isGenerateUniqueName() {
@@ -382,134 +316,13 @@ public class DataSourceProperties implements BeanClassLoaderAware, InitializingB
 	}
 
 	/**
-	 * Allows the DataSource to be managed by the container and obtained via JNDI. The
+	 * Allows the DataSource to be managed by the container and obtained through JNDI. The
 	 * {@code URL}, {@code driverClassName}, {@code username} and {@code password} fields
 	 * will be ignored when using JNDI lookups.
 	 * @param jndiName the JNDI name
 	 */
 	public void setJndiName(String jndiName) {
 		this.jndiName = jndiName;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.mode")
-	public org.springframework.boot.jdbc.DataSourceInitializationMode getInitializationMode() {
-		return this.initializationMode;
-	}
-
-	@Deprecated
-	public void setInitializationMode(org.springframework.boot.jdbc.DataSourceInitializationMode initializationMode) {
-		this.initializationMode = initializationMode;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.platform")
-	public String getPlatform() {
-		return this.platform;
-	}
-
-	@Deprecated
-	public void setPlatform(String platform) {
-		this.platform = platform;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.schema-locations")
-	public List<String> getSchema() {
-		return this.schema;
-	}
-
-	@Deprecated
-	public void setSchema(List<String> schema) {
-		this.schema = schema;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.username")
-	public String getSchemaUsername() {
-		return this.schemaUsername;
-	}
-
-	@Deprecated
-	public void setSchemaUsername(String schemaUsername) {
-		this.schemaUsername = schemaUsername;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.password")
-	public String getSchemaPassword() {
-		return this.schemaPassword;
-	}
-
-	@Deprecated
-	public void setSchemaPassword(String schemaPassword) {
-		this.schemaPassword = schemaPassword;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.data-locations")
-	public List<String> getData() {
-		return this.data;
-	}
-
-	@Deprecated
-	public void setData(List<String> data) {
-		this.data = data;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.username")
-	public String getDataUsername() {
-		return this.dataUsername;
-	}
-
-	@Deprecated
-	public void setDataUsername(String dataUsername) {
-		this.dataUsername = dataUsername;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.password")
-	public String getDataPassword() {
-		return this.dataPassword;
-	}
-
-	@Deprecated
-	public void setDataPassword(String dataPassword) {
-		this.dataPassword = dataPassword;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.continue-on-error")
-	public boolean isContinueOnError() {
-		return this.continueOnError;
-	}
-
-	@Deprecated
-	public void setContinueOnError(boolean continueOnError) {
-		this.continueOnError = continueOnError;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.separator")
-	public String getSeparator() {
-		return this.separator;
-	}
-
-	@Deprecated
-	public void setSeparator(String separator) {
-		this.separator = separator;
-	}
-
-	@Deprecated
-	@DeprecatedConfigurationProperty(replacement = "spring.sql.init.encoding")
-	public Charset getSqlScriptEncoding() {
-		return this.sqlScriptEncoding;
-	}
-
-	@Deprecated
-	public void setSqlScriptEncoding(Charset sqlScriptEncoding) {
-		this.sqlScriptEncoding = sqlScriptEncoding;
 	}
 
 	public EmbeddedDatabaseConnection getEmbeddedDatabaseConnection() {

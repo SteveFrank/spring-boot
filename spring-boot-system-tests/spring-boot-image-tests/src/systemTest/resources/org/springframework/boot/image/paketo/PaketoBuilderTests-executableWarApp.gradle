@@ -6,9 +6,18 @@ plugins {
 }
 
 repositories {
+	exclusiveContent {
+		forRepository {
+			maven {
+				url = '{systemTestMavenRepository}'
+			}
+		}
+		filter {
+			includeGroup "org.springframework.boot"
+		}
+	}
 	mavenCentral()
-	maven { url 'https://repo.spring.io/milestone' }
-	maven { url 'https://repo.spring.io/snapshot' }
+	spring.mavenRepositories()
 }
 
 dependencies {

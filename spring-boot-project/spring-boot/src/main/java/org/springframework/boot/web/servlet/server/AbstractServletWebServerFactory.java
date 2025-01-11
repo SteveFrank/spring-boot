@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,15 +31,15 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.SessionCookieConfig;
-
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.SessionCookieConfig;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import org.springframework.boot.context.properties.PropertyMapper;
 import org.springframework.boot.web.server.AbstractConfigurableWebServerFactory;
+import org.springframework.boot.web.server.Cookie;
 import org.springframework.boot.web.server.MimeMappings;
 import org.springframework.boot.web.servlet.ServletContextInitializer;
 import org.springframework.util.Assert;
@@ -70,7 +70,7 @@ public abstract class AbstractServletWebServerFactory extends AbstractConfigurab
 
 	private boolean registerDefaultServlet = false;
 
-	private MimeMappings mimeMappings = new MimeMappings(MimeMappings.DEFAULT);
+	private MimeMappings mimeMappings = MimeMappings.lazyCopy(MimeMappings.DEFAULT);
 
 	private List<ServletContextInitializer> initializers = new ArrayList<>();
 
@@ -174,7 +174,13 @@ public abstract class AbstractServletWebServerFactory extends AbstractConfigurab
 
 	@Override
 	public void setMimeMappings(MimeMappings mimeMappings) {
+		Assert.notNull(mimeMappings, "MimeMappings must not be null");
 		this.mimeMappings = new MimeMappings(mimeMappings);
+	}
+
+	@Override
+	public void addMimeMappings(MimeMappings mimeMappings) {
+		mimeMappings.forEach((mapping) -> this.mimeMappings.add(mapping.getExtension(), mapping.getMimeType()));
 	}
 
 	/**
@@ -277,7 +283,7 @@ public abstract class AbstractServletWebServerFactory extends AbstractConfigurab
 	}
 
 	/**
-	 * Returns whether or not the JSP servlet should be registered with the web server.
+	 * Returns whether the JSP servlet should be registered with the web server.
 	 * @return {@code true} if the servlet should be registered, otherwise {@code false}
 	 */
 	protected boolean shouldRegisterJspServlet() {
@@ -336,24 +342,26 @@ public abstract class AbstractServletWebServerFactory extends AbstractConfigurab
 		}
 
 		private void configureSessionCookie(SessionCookieConfig config) {
-			Session.Cookie cookie = this.session.getCookie();
+			Cookie cookie = this.session.getCookie();
 			PropertyMapper map = PropertyMapper.get().alwaysApplyingWhenNonNull();
 			map.from(cookie::getName).to(config::setName);
 			map.from(cookie::getDomain).to(config::setDomain);
 			map.from(cookie::getPath).to(config::setPath);
-			map.from(cookie::getComment).to(config::setComment);
 			map.from(cookie::getHttpOnly).to(config::setHttpOnly);
 			map.from(cookie::getSecure).to(config::setSecure);
 			map.from(cookie::getMaxAge).asInt(Duration::getSeconds).to(config::setMaxAge);
+			map.from(cookie::getPartitioned)
+				.as(Object::toString)
+				.to((partitioned) -> config.setAttribute("Partitioned", partitioned));
 		}
 
-		private Set<javax.servlet.SessionTrackingMode> unwrap(Set<Session.SessionTrackingMode> modes) {
+		private Set<jakarta.servlet.SessionTrackingMode> unwrap(Set<Session.SessionTrackingMode> modes) {
 			if (modes == null) {
 				return null;
 			}
-			Set<javax.servlet.SessionTrackingMode> result = new LinkedHashSet<>();
+			Set<jakarta.servlet.SessionTrackingMode> result = new LinkedHashSet<>();
 			for (Session.SessionTrackingMode mode : modes) {
-				result.add(javax.servlet.SessionTrackingMode.valueOf(mode.name()));
+				result.add(jakarta.servlet.SessionTrackingMode.valueOf(mode.name()));
 			}
 			return result;
 		}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,11 +36,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.doReturn;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
 
 /**
  * Base class for tests for {@link DevToolsDataSourceAutoConfiguration}.
@@ -51,38 +51,41 @@ abstract class AbstractDevToolsDataSourceAutoConfigurationTests {
 
 	@Test
 	void singleManuallyConfiguredDataSourceIsNotClosed() throws Exception {
-		ConfigurableApplicationContext context = getContext(() -> createContext(SingleDataSourceConfiguration.class));
-		DataSource dataSource = context.getBean(DataSource.class);
-		Statement statement = configureDataSourceBehavior(dataSource);
-		verify(statement, never()).execute("SHUTDOWN");
+		try (ConfigurableApplicationContext context = getContext(
+				() -> createContext(SingleDataSourceConfiguration.class))) {
+			DataSource dataSource = context.getBean(DataSource.class);
+			Statement statement = configureDataSourceBehavior(dataSource);
+			then(statement).should(never()).execute("SHUTDOWN");
+		}
 	}
 
 	@Test
 	void multipleDataSourcesAreIgnored() throws Exception {
-		ConfigurableApplicationContext context = getContext(
-				() -> createContext(MultipleDataSourcesConfiguration.class));
-		Collection<DataSource> dataSources = context.getBeansOfType(DataSource.class).values();
-		for (DataSource dataSource : dataSources) {
-			Statement statement = configureDataSourceBehavior(dataSource);
-			verify(statement, never()).execute("SHUTDOWN");
+		try (ConfigurableApplicationContext context = getContext(
+				() -> createContext(MultipleDataSourcesConfiguration.class))) {
+			Collection<DataSource> dataSources = context.getBeansOfType(DataSource.class).values();
+			for (DataSource dataSource : dataSources) {
+				Statement statement = configureDataSourceBehavior(dataSource);
+				then(statement).should(never()).execute("SHUTDOWN");
+			}
 		}
 	}
 
 	@Test
 	void emptyFactoryMethodMetadataIgnored() {
-		AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-		DataSource dataSource = mock(DataSource.class);
-		AnnotatedGenericBeanDefinition beanDefinition = new AnnotatedGenericBeanDefinition(dataSource.getClass());
-		context.registerBeanDefinition("dataSource", beanDefinition);
-		context.register(DevToolsDataSourceAutoConfiguration.class);
-		context.refresh();
-		context.close();
+		try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+			DataSource dataSource = mock(DataSource.class);
+			AnnotatedGenericBeanDefinition beanDefinition = new AnnotatedGenericBeanDefinition(dataSource.getClass());
+			context.registerBeanDefinition("dataSource", beanDefinition);
+			context.register(DevToolsDataSourceAutoConfiguration.class);
+			context.refresh();
+		}
 	}
 
 	protected final Statement configureDataSourceBehavior(DataSource dataSource) throws SQLException {
 		Connection connection = mock(Connection.class);
 		Statement statement = mock(Statement.class);
-		doReturn(connection).when(dataSource).getConnection();
+		willReturn(connection).given(dataSource).getConnection();
 		given(connection.createStatement()).willReturn(statement);
 		return statement;
 	}
@@ -151,7 +154,7 @@ abstract class AbstractDevToolsDataSourceAutoConfigurationTests {
 	static class DataSourceSpyConfiguration {
 
 		@Bean
-		DataSourceSpyBeanPostProcessor dataSourceSpyBeanPostProcessor() {
+		static DataSourceSpyBeanPostProcessor dataSourceSpyBeanPostProcessor() {
 			return new DataSourceSpyBeanPostProcessor();
 		}
 

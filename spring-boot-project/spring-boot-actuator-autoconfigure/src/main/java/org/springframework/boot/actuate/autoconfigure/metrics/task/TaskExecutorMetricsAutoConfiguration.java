@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,27 +16,27 @@
 
 package org.springframework.boot.actuate.autoconfigure.metrics.task;
 
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.function.Supplier;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.jvm.ExecutorServiceMetrics;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.LazyInitializationExcludeFilter;
 import org.springframework.boot.actuate.autoconfigure.metrics.MetricsAutoConfiguration;
 import org.springframework.boot.actuate.autoconfigure.metrics.export.simple.SimpleMetricsExportAutoConfiguration;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.task.TaskExecutionAutoConfiguration;
 import org.springframework.boot.autoconfigure.task.TaskSchedulingAutoConfiguration;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
-import org.springframework.util.StringUtils;
 
 /**
  * {@link EnableAutoConfiguration Auto-configuration} for metrics on all available
@@ -44,36 +44,35 @@ import org.springframework.util.StringUtils;
  * schedulers}.
  *
  * @author Stephane Nicoll
+ * @author Scott Frederick
  * @since 2.6.0
  */
-@Configuration(proxyBeanMethods = false)
-@AutoConfigureAfter({ MetricsAutoConfiguration.class, SimpleMetricsExportAutoConfiguration.class,
+@AutoConfiguration(after = { MetricsAutoConfiguration.class, SimpleMetricsExportAutoConfiguration.class,
 		TaskExecutionAutoConfiguration.class, TaskSchedulingAutoConfiguration.class })
 @ConditionalOnClass(ExecutorServiceMetrics.class)
 @ConditionalOnBean({ Executor.class, MeterRegistry.class })
 public class TaskExecutorMetricsAutoConfiguration {
 
-	private static final String TASK_EXECUTOR_SUFFIX = "taskExecutor";
-
-	private static final String TASK_SCHEDULER_SUFFIX = "taskScheduler";
-
 	@Autowired
 	public void bindTaskExecutorsToRegistry(Map<String, Executor> executors, MeterRegistry registry) {
 		executors.forEach((beanName, executor) -> {
-			if (executor instanceof ThreadPoolTaskExecutor) {
-				monitor(registry, safeGetThreadPoolExecutor((ThreadPoolTaskExecutor) executor),
-						() -> getTaskExecutorName(beanName));
+			if (executor instanceof ThreadPoolTaskExecutor threadPoolTaskExecutor) {
+				monitor(registry, safeGetThreadPoolExecutor(threadPoolTaskExecutor), beanName);
 			}
-			else if (executor instanceof ThreadPoolTaskScheduler) {
-				monitor(registry, safeGetThreadPoolExecutor((ThreadPoolTaskScheduler) executor),
-						() -> getTaskSchedulerName(beanName));
+			else if (executor instanceof ThreadPoolTaskScheduler threadPoolTaskScheduler) {
+				monitor(registry, safeGetThreadPoolExecutor(threadPoolTaskScheduler), beanName);
 			}
 		});
 	}
 
-	private void monitor(MeterRegistry registry, ThreadPoolExecutor threadPoolExecutor, Supplier<String> beanName) {
+	@Bean
+	static LazyInitializationExcludeFilter eagerTaskExecutorMetrics() {
+		return LazyInitializationExcludeFilter.forBeanTypes(TaskExecutorMetricsAutoConfiguration.class);
+	}
+
+	private void monitor(MeterRegistry registry, ThreadPoolExecutor threadPoolExecutor, String name) {
 		if (threadPoolExecutor != null) {
-			ExecutorServiceMetrics.monitor(registry, threadPoolExecutor, beanName.get());
+			new ExecutorServiceMetrics(threadPoolExecutor, name, Collections.emptyList()).bindTo(registry);
 		}
 	}
 
@@ -93,35 +92,6 @@ public class TaskExecutorMetricsAutoConfiguration {
 		catch (IllegalStateException ex) {
 			return null;
 		}
-	}
-
-	/**
-	 * Get the name of a {@link ThreadPoolTaskExecutor} based on its {@code beanName}.
-	 * @param beanName the name of the {@link ThreadPoolTaskExecutor} bean
-	 * @return a name for the given task executor
-	 */
-	private String getTaskExecutorName(String beanName) {
-		if (beanName.length() > TASK_EXECUTOR_SUFFIX.length()
-				&& StringUtils.endsWithIgnoreCase(beanName, TASK_EXECUTOR_SUFFIX)) {
-			return beanName.substring(0, beanName.length() - TASK_EXECUTOR_SUFFIX.length());
-		}
-		return beanName;
-	}
-
-	/**
-	 * Get the name of a {@link ThreadPoolTaskScheduler} based on its {@code beanName}.
-	 * @param beanName the name of the {@link ThreadPoolTaskScheduler} bean
-	 * @return a name for the given task scheduler
-	 */
-	private String getTaskSchedulerName(String beanName) {
-		if (beanName.equals(TASK_SCHEDULER_SUFFIX)) {
-			return "application";
-		}
-		if (beanName.length() > TASK_SCHEDULER_SUFFIX.length()
-				&& StringUtils.endsWithIgnoreCase(beanName, TASK_SCHEDULER_SUFFIX)) {
-			return beanName.substring(0, beanName.length() - TASK_SCHEDULER_SUFFIX.length());
-		}
-		return beanName;
 	}
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2022 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,19 +38,19 @@ public class MyRestController {
 		this.customerRepository = customerRepository;
 	}
 
-	@GetMapping("/{user}")
+	@GetMapping("/{userId}")
 	public Mono<User> getUser(@PathVariable Long userId) {
 		return this.userRepository.findById(userId);
 	}
 
-	@GetMapping("/{user}/customers")
+	@GetMapping("/{userId}/customers")
 	public Flux<Customer> getUserCustomers(@PathVariable Long userId) {
 		return this.userRepository.findById(userId).flatMapMany(this.customerRepository::findByUser);
 	}
 
-	@DeleteMapping("/{user}")
-	public void deleteUser(@PathVariable Long userId) {
-		this.userRepository.deleteById(userId);
+	@DeleteMapping("/{userId}")
+	public Mono<Void> deleteUser(@PathVariable Long userId) {
+		return this.userRepository.deleteById(userId);
 	}
 
 }

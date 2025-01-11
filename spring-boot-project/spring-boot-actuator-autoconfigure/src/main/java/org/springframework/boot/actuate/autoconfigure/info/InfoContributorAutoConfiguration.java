@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,16 @@
 
 package org.springframework.boot.actuate.autoconfigure.info;
 
+import org.springframework.boot.actuate.autoconfigure.ssl.SslHealthIndicatorProperties;
 import org.springframework.boot.actuate.info.BuildInfoContributor;
 import org.springframework.boot.actuate.info.EnvironmentInfoContributor;
 import org.springframework.boot.actuate.info.GitInfoContributor;
 import org.springframework.boot.actuate.info.InfoContributor;
 import org.springframework.boot.actuate.info.JavaInfoContributor;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.actuate.info.OsInfoContributor;
+import org.springframework.boot.actuate.info.ProcessInfoContributor;
+import org.springframework.boot.actuate.info.SslInfoContributor;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnSingleCandidate;
@@ -29,8 +33,9 @@ import org.springframework.boot.autoconfigure.info.ProjectInfoAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.boot.info.GitProperties;
+import org.springframework.boot.info.SslInfo;
+import org.springframework.boot.ssl.SslBundles;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.ConfigurableEnvironment;
@@ -44,9 +49,8 @@ import org.springframework.core.env.ConfigurableEnvironment;
  * @author Jonatan Ivanov
  * @since 2.0.0
  */
-@Configuration(proxyBeanMethods = false)
-@AutoConfigureAfter(ProjectInfoAutoConfiguration.class)
-@EnableConfigurationProperties(InfoContributorProperties.class)
+@AutoConfiguration(after = ProjectInfoAutoConfiguration.class)
+@EnableConfigurationProperties({ InfoContributorProperties.class, SslHealthIndicatorProperties.class })
 public class InfoContributorAutoConfiguration {
 
 	/**
@@ -84,6 +88,34 @@ public class InfoContributorAutoConfiguration {
 	@Order(DEFAULT_ORDER)
 	public JavaInfoContributor javaInfoContributor() {
 		return new JavaInfoContributor();
+	}
+
+	@Bean
+	@ConditionalOnEnabledInfoContributor(value = "os", fallback = InfoContributorFallback.DISABLE)
+	@Order(DEFAULT_ORDER)
+	public OsInfoContributor osInfoContributor() {
+		return new OsInfoContributor();
+	}
+
+	@Bean
+	@ConditionalOnEnabledInfoContributor(value = "process", fallback = InfoContributorFallback.DISABLE)
+	@Order(DEFAULT_ORDER)
+	public ProcessInfoContributor processInfoContributor() {
+		return new ProcessInfoContributor();
+	}
+
+	@Bean
+	@ConditionalOnEnabledInfoContributor(value = "ssl", fallback = InfoContributorFallback.DISABLE)
+	@Order(DEFAULT_ORDER)
+	SslInfoContributor sslInfoContributor(SslInfo sslInfo) {
+		return new SslInfoContributor(sslInfo);
+	}
+
+	@Bean
+	@ConditionalOnMissingBean
+	@ConditionalOnEnabledInfoContributor(value = "ssl", fallback = InfoContributorFallback.DISABLE)
+	SslInfo sslInfo(SslBundles sslBundles, SslHealthIndicatorProperties sslHealthIndicatorProperties) {
+		return new SslInfo(sslBundles, sslHealthIndicatorProperties.getCertificateValidityWarningThreshold());
 	}
 
 }

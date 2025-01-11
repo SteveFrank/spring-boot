@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,17 @@
 package org.springframework.boot.web.reactive.server;
 
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -43,10 +41,10 @@ import io.netty.handler.ssl.SslProvider;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.awaitility.Awaitility;
-import org.eclipse.jetty.client.api.ContentResponse;
-import org.eclipse.jetty.client.util.StringContentProvider;
+import org.eclipse.jetty.client.ContentResponse;
+import org.eclipse.jetty.client.StringRequestContent;
 import org.eclipse.jetty.http2.client.HTTP2Client;
-import org.eclipse.jetty.http2.client.http.HttpClientTransportOverHTTP2;
+import org.eclipse.jetty.http2.client.transport.HttpClientTransportOverHTTP2;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -54,6 +52,7 @@ import reactor.core.publisher.Sinks;
 import reactor.netty.NettyPipeline;
 import reactor.netty.http.Http11SslContextSpec;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.tcp.SslProvider.GenericSslContextSpec;
 import reactor.test.StepVerifier;
 
 import org.springframework.boot.web.server.Compression;
@@ -73,19 +72,20 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.http.server.reactive.HttpHandler;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
-import org.springframework.util.SocketUtils;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatException;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 /**
  * Base for testing classes that extends {@link AbstractReactiveWebServerFactory}.
  *
  * @author Brian Clozel
+ * @author Scott Frederick
  */
 public abstract class AbstractReactiveWebServerFactoryTests {
 
@@ -96,6 +96,12 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		if (this.webServer != null) {
 			try {
 				this.webServer.stop();
+				try {
+					this.webServer.destroy();
+				}
+				catch (Exception ex) {
+					// Ignore
+				}
 			}
 			catch (Exception ex) {
 				// Ignore
@@ -109,17 +115,44 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 	void specificPort() throws Exception {
 		AbstractReactiveWebServerFactory factory = getFactory();
 		int specificPort = doWithRetry(() -> {
-			int port = SocketUtils.findAvailableTcpPort(41000);
-			factory.setPort(port);
+			factory.setPort(0);
 			this.webServer = factory.getWebServer(new EchoHandler());
 			this.webServer.start();
-			return port;
+			return this.webServer.getPort();
 		});
-		Mono<String> result = getWebClient(this.webServer.getPort()).build().post().uri("/test")
-				.contentType(MediaType.TEXT_PLAIN).body(BodyInserters.fromValue("Hello World")).retrieve()
-				.bodyToMono(String.class);
+		Mono<String> result = getWebClient(this.webServer.getPort()).build()
+			.post()
+			.uri("/test")
+			.contentType(MediaType.TEXT_PLAIN)
+			.body(BodyInserters.fromValue("Hello World"))
+			.retrieve()
+			.bodyToMono(String.class);
 		assertThat(result.block(Duration.ofSeconds(30))).isEqualTo("Hello World");
 		assertThat(this.webServer.getPort()).isEqualTo(specificPort);
+	}
+
+	@Test
+	protected void restartAfterStop() throws Exception {
+		AbstractReactiveWebServerFactory factory = getFactory();
+		this.webServer = factory.getWebServer(new EchoHandler());
+		this.webServer.start();
+		int port = this.webServer.getPort();
+		assertThat(getResponse(port, "/test")).isEqualTo("Hello World");
+		this.webServer.stop();
+		assertThatException().isThrownBy(() -> getResponse(port, "/test"));
+		this.webServer.start();
+		assertThat(getResponse(this.webServer.getPort(), "/test")).isEqualTo("Hello World");
+	}
+
+	private String getResponse(int port, String uri) {
+		WebClient webClient = getWebClient(port).build();
+		Mono<String> result = webClient.post()
+			.uri(uri)
+			.contentType(MediaType.TEXT_PLAIN)
+			.body(BodyInserters.fromValue("Hello World"))
+			.retrieve()
+			.bodyToMono(String.class);
+		return result.block(Duration.ofSeconds(30));
 	}
 
 	@Test
@@ -128,7 +161,7 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		this.webServer = factory.getWebServer(new EchoHandler());
 		this.webServer.start();
 		assertThat(this.webServer.getPort()).isGreaterThan(0);
-		this.webServer.stop();
+		this.webServer.destroy();
 		assertThat(this.webServer.getPort()).isEqualTo(-1);
 	}
 
@@ -153,10 +186,16 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		this.webServer = factory.getWebServer(new EchoHandler());
 		this.webServer.start();
 		ReactorClientHttpConnector connector = buildTrustAllSslConnector();
-		WebClient client = WebClient.builder().baseUrl("https://localhost:" + this.webServer.getPort())
-				.clientConnector(connector).build();
-		Mono<String> result = client.post().uri("/test").contentType(MediaType.TEXT_PLAIN)
-				.body(BodyInserters.fromValue("Hello World")).retrieve().bodyToMono(String.class);
+		WebClient client = WebClient.builder()
+			.baseUrl("https://localhost:" + this.webServer.getPort())
+			.clientConnector(connector)
+			.build();
+		Mono<String> result = client.post()
+			.uri("/test")
+			.contentType(MediaType.TEXT_PLAIN)
+			.body(BodyInserters.fromValue("Hello World"))
+			.retrieve()
+			.bodyToMono(String.class);
 		assertThat(result.block(Duration.ofSeconds(30))).isEqualTo("Hello World");
 	}
 
@@ -174,14 +213,19 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		this.webServer = factory.getWebServer(new EchoHandler());
 		this.webServer.start();
 		ReactorClientHttpConnector connector = buildTrustAllSslConnector();
-		WebClient client = WebClient.builder().baseUrl("https://localhost:" + this.webServer.getPort())
-				.clientConnector(connector).build();
+		WebClient client = WebClient.builder()
+			.baseUrl("https://localhost:" + this.webServer.getPort())
+			.clientConnector(connector)
+			.build();
 
-		Mono<String> result = client.post().uri("/test").contentType(MediaType.TEXT_PLAIN)
-				.body(BodyInserters.fromValue("Hello World")).retrieve().bodyToMono(String.class);
+		Mono<String> result = client.post()
+			.uri("/test")
+			.contentType(MediaType.TEXT_PLAIN)
+			.body(BodyInserters.fromValue("Hello World"))
+			.retrieve()
+			.bodyToMono(String.class);
 
-		StepVerifier.setDefaultTimeout(Duration.ofSeconds(30));
-		StepVerifier.create(result).expectNext("Hello World").verifyComplete();
+		StepVerifier.create(result).expectNext("Hello World").expectComplete().verify(Duration.ofSeconds(30));
 	}
 
 	@Test
@@ -198,12 +242,14 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 	}
 
 	protected void assertThatSslWithInvalidAliasCallFails(ThrowingCallable call) {
-		assertThatThrownBy(call).hasStackTraceContaining("Keystore does not contain specified alias 'test-alias-404'");
+		assertThatException().isThrownBy(call)
+			.withStackTraceContaining("Keystore does not contain alias 'test-alias-404'");
 	}
 
 	protected ReactorClientHttpConnector buildTrustAllSslConnector() {
-		Http11SslContextSpec sslContextSpec = Http11SslContextSpec.forClient().configure(
-				(builder) -> builder.sslProvider(SslProvider.JDK).trustManager(InsecureTrustManagerFactory.INSTANCE));
+		GenericSslContextSpec<?> sslContextSpec = Http11SslContextSpec.forClient()
+			.configure((builder) -> builder.sslProvider(SslProvider.JDK)
+				.trustManager(InsecureTrustManagerFactory.INSTANCE));
 		HttpClient client = HttpClient.create().wiretap(true).secure((spec) -> spec.sslContext(sslContextSpec));
 		return new ReactorClientHttpConnector(client);
 	}
@@ -216,7 +262,7 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		ssl.setKeyPassword("password");
 		ssl.setKeyStorePassword("secret");
 		ssl.setTrustStore("classpath:test.jks");
-		testClientAuthSuccess(ssl, buildTrustAllSslWithClientKeyConnector());
+		testClientAuthSuccess(ssl, buildTrustAllSslWithClientKeyConnector("test.jks", "password"));
 	}
 
 	@Test
@@ -230,18 +276,20 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		testClientAuthSuccess(ssl, buildTrustAllSslConnector());
 	}
 
-	protected ReactorClientHttpConnector buildTrustAllSslWithClientKeyConnector() throws Exception {
+	protected ReactorClientHttpConnector buildTrustAllSslWithClientKeyConnector(String keyStoreFile,
+			String keyStorePassword) throws Exception {
 		KeyStore clientKeyStore = KeyStore.getInstance(KeyStore.getDefaultType());
-		try (InputStream stream = new FileInputStream("src/test/resources/test.jks")) {
+		try (InputStream stream = new FileInputStream("src/test/resources/" + keyStoreFile)) {
 			clientKeyStore.load(stream, "secret".toCharArray());
 		}
 		KeyManagerFactory clientKeyManagerFactory = KeyManagerFactory
-				.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-		clientKeyManagerFactory.init(clientKeyStore, "password".toCharArray());
+			.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+		clientKeyManagerFactory.init(clientKeyStore, keyStorePassword.toCharArray());
 
-		Http11SslContextSpec sslContextSpec = Http11SslContextSpec.forClient()
-				.configure((builder) -> builder.sslProvider(SslProvider.JDK)
-						.trustManager(InsecureTrustManagerFactory.INSTANCE).keyManager(clientKeyManagerFactory));
+		GenericSslContextSpec<?> sslContextSpec = Http11SslContextSpec.forClient()
+			.configure((builder) -> builder.sslProvider(SslProvider.JDK)
+				.trustManager(InsecureTrustManagerFactory.INSTANCE)
+				.keyManager(clientKeyManagerFactory));
 		HttpClient client = HttpClient.create().wiretap(true).secure((spec) -> spec.sslContext(sslContextSpec));
 		return new ReactorClientHttpConnector(client);
 	}
@@ -251,10 +299,16 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		factory.setSsl(sslConfiguration);
 		this.webServer = factory.getWebServer(new EchoHandler());
 		this.webServer.start();
-		WebClient client = WebClient.builder().baseUrl("https://localhost:" + this.webServer.getPort())
-				.clientConnector(clientConnector).build();
-		Mono<String> result = client.post().uri("/test").contentType(MediaType.TEXT_PLAIN)
-				.body(BodyInserters.fromValue("Hello World")).retrieve().bodyToMono(String.class);
+		WebClient client = WebClient.builder()
+			.baseUrl("https://localhost:" + this.webServer.getPort())
+			.clientConnector(clientConnector)
+			.build();
+		Mono<String> result = client.post()
+			.uri("/test")
+			.contentType(MediaType.TEXT_PLAIN)
+			.body(BodyInserters.fromValue("Hello World"))
+			.retrieve()
+			.bodyToMono(String.class);
 		assertThat(result.block(Duration.ofSeconds(30))).isEqualTo("Hello World");
 	}
 
@@ -266,7 +320,7 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		ssl.setKeyStorePassword("secret");
 		ssl.setKeyPassword("password");
 		ssl.setTrustStore("classpath:test.jks");
-		testClientAuthSuccess(ssl, buildTrustAllSslWithClientKeyConnector());
+		testClientAuthSuccess(ssl, buildTrustAllSslWithClientKeyConnector("test.jks", "password"));
 	}
 
 	@Test
@@ -280,15 +334,31 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		testClientAuthFailure(ssl, buildTrustAllSslConnector());
 	}
 
+	@Test
+	void sslWithPemCertificates() throws Exception {
+		Ssl ssl = new Ssl();
+		ssl.setClientAuth(Ssl.ClientAuth.NEED);
+		ssl.setCertificate("classpath:test-cert.pem");
+		ssl.setCertificatePrivateKey("classpath:test-key.pem");
+		ssl.setTrustCertificate("classpath:test-cert.pem");
+		testClientAuthSuccess(ssl, buildTrustAllSslWithClientKeyConnector("test.p12", "secret"));
+	}
+
 	protected void testClientAuthFailure(Ssl sslConfiguration, ReactorClientHttpConnector clientConnector) {
 		AbstractReactiveWebServerFactory factory = getFactory();
 		factory.setSsl(sslConfiguration);
 		this.webServer = factory.getWebServer(new EchoHandler());
 		this.webServer.start();
-		WebClient client = WebClient.builder().baseUrl("https://localhost:" + this.webServer.getPort())
-				.clientConnector(clientConnector).build();
-		Mono<String> result = client.post().uri("/test").contentType(MediaType.TEXT_PLAIN)
-				.body(BodyInserters.fromValue("Hello World")).retrieve().bodyToMono(String.class);
+		WebClient client = WebClient.builder()
+			.baseUrl("https://localhost:" + this.webServer.getPort())
+			.clientConnector(clientConnector)
+			.build();
+		Mono<String> result = client.post()
+			.uri("/test")
+			.contentType(MediaType.TEXT_PLAIN)
+			.body(BodyInserters.fromValue("Hello World"))
+			.retrieve()
+			.bodyToMono(String.class);
 		StepVerifier.create(result).expectError(WebClientRequestException.class).verify(Duration.ofSeconds(10));
 	}
 
@@ -342,8 +412,11 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		compression.setEnabled(true);
 		compression.setExcludedUserAgents(new String[] { "testUserAgent" });
 		WebClient client = prepareCompressionTest(compression);
-		ResponseEntity<Void> response = client.get().header("User-Agent", "testUserAgent").retrieve().toBodilessEntity()
-				.block(Duration.ofSeconds(30));
+		ResponseEntity<Void> response = client.get()
+			.header("User-Agent", "testUserAgent")
+			.retrieve()
+			.toBodilessEntity()
+			.block(Duration.ofSeconds(30));
 		assertResponseIsNotCompressed(response);
 	}
 
@@ -359,8 +432,8 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 
 	@Test
 	void whenSslIsEnabledAndNoKeyStoreIsConfiguredThenServerFailsToStart() {
-		assertThatThrownBy(() -> testBasicSslWithKeyStore(null, null))
-				.hasMessageContaining("Could not load key store 'null'");
+		assertThatIllegalStateException().isThrownBy(() -> testBasicSslWithKeyStore(null, null))
+			.withMessageContaining("SSL is enabled but no trust material is configured");
 	}
 
 	@Test
@@ -382,8 +455,10 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		BlockingHandler blockingHandler = new BlockingHandler();
 		this.webServer = factory.getWebServer(blockingHandler);
 		this.webServer.start();
-		Mono<ResponseEntity<Void>> request = getWebClient(this.webServer.getPort()).build().get().retrieve()
-				.toBodilessEntity();
+		Mono<ResponseEntity<Void>> request = getWebClient(this.webServer.getPort()).build()
+			.get()
+			.retrieve()
+			.toBodilessEntity();
 		AtomicReference<ResponseEntity<Void>> responseReference = new AtomicReference<>();
 		CountDownLatch responseLatch = new CountDownLatch(1);
 		request.subscribe((response) -> {
@@ -407,8 +482,10 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		BlockingHandler blockingHandler = new BlockingHandler();
 		this.webServer = factory.getWebServer(blockingHandler);
 		this.webServer.start();
-		Mono<ResponseEntity<Void>> request = getWebClient(this.webServer.getPort()).build().get().retrieve()
-				.toBodilessEntity();
+		Mono<ResponseEntity<Void>> request = getWebClient(this.webServer.getPort()).build()
+			.get()
+			.retrieve()
+			.toBodilessEntity();
 		AtomicReference<ResponseEntity<Void>> responseReference = new AtomicReference<>();
 		CountDownLatch responseLatch = new CountDownLatch(1);
 		request.subscribe((response) -> {
@@ -426,8 +503,9 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 			// Continue
 		}
 		System.out.println("Stopped");
-		Awaitility.await().atMost(Duration.ofSeconds(5))
-				.until(() -> GracefulShutdownResult.REQUESTS_ACTIVE == result.get());
+		Awaitility.await()
+			.atMost(Duration.ofSeconds(5))
+			.until(() -> GracefulShutdownResult.REQUESTS_ACTIVE == result.get());
 		blockingHandler.completeOne();
 	}
 
@@ -438,8 +516,10 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		BlockingHandler blockingHandler = new BlockingHandler();
 		this.webServer = factory.getWebServer(blockingHandler);
 		this.webServer.start();
-		Mono<ResponseEntity<Void>> request = getWebClient(this.webServer.getPort()).build().get().retrieve()
-				.toBodilessEntity();
+		Mono<ResponseEntity<Void>> request = getWebClient(this.webServer.getPort()).build()
+			.get()
+			.retrieve()
+			.toBodilessEntity();
 		AtomicReference<ResponseEntity<Void>> responseReference = new AtomicReference<>();
 		CountDownLatch responseLatch = new CountDownLatch(1);
 		request.subscribe((response) -> {
@@ -450,19 +530,22 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		AtomicReference<GracefulShutdownResult> result = new AtomicReference<>();
 		this.webServer.shutDownGracefully(result::set);
 		this.webServer.stop();
-		Awaitility.await().atMost(Duration.ofSeconds(30))
-				.until(() -> GracefulShutdownResult.REQUESTS_ACTIVE == result.get());
+		Awaitility.await()
+			.atMost(Duration.ofSeconds(30))
+			.until(() -> GracefulShutdownResult.REQUESTS_ACTIVE == result.get());
 		blockingHandler.completeOne();
 	}
 
 	@Test
-	void whenARequestIsActiveThenStopWillComplete() throws InterruptedException, BrokenBarrierException {
+	void whenARequestIsActiveThenStopWillComplete() throws InterruptedException {
 		AbstractReactiveWebServerFactory factory = getFactory();
 		BlockingHandler blockingHandler = new BlockingHandler();
 		this.webServer = factory.getWebServer(blockingHandler);
 		this.webServer.start();
-		Mono<ResponseEntity<Void>> request = getWebClient(this.webServer.getPort()).build().get().retrieve()
-				.toBodilessEntity();
+		Mono<ResponseEntity<Void>> request = getWebClient(this.webServer.getPort()).build()
+			.get()
+			.retrieve()
+			.toBodilessEntity();
 		AtomicReference<ResponseEntity<Void>> responseReference = new AtomicReference<>();
 		CountDownLatch responseLatch = new CountDownLatch(1);
 		request.subscribe((response) -> {
@@ -487,33 +570,53 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		factory.setHttp2(http2);
 		this.webServer = factory.getWebServer(new EchoHandler());
 		this.webServer.start();
-		org.eclipse.jetty.client.HttpClient client = new org.eclipse.jetty.client.HttpClient(
-				new HttpClientTransportOverHTTP2(new HTTP2Client()));
-		client.start();
-		try {
+
+		try (org.eclipse.jetty.client.HttpClient client = new org.eclipse.jetty.client.HttpClient(
+				new HttpClientTransportOverHTTP2(new HTTP2Client()))) {
+			client.start();
 			ContentResponse response = client.POST("http://localhost:" + this.webServer.getPort())
-					.content(new StringContentProvider("Hello World"), "text/plain").send();
+				.body(new StringRequestContent("text/plain", "Hello World"))
+				.send();
 			assertThat(response.getStatus()).isEqualTo(HttpStatus.OK.value());
 			assertThat(response.getContentAsString()).isEqualTo("Hello World");
-		}
-		finally {
-			client.stop();
 		}
 	}
 
 	@Test
-	protected void whenHttp2IsEnabledAndSslIsDisabledThenHttp11CanStillBeUsed()
-			throws InterruptedException, ExecutionException, IOException {
+	protected void whenHttp2IsEnabledAndSslIsDisabledThenHttp11CanStillBeUsed() {
 		AbstractReactiveWebServerFactory factory = getFactory();
 		Http2 http2 = new Http2();
 		http2.setEnabled(true);
 		factory.setHttp2(http2);
 		this.webServer = factory.getWebServer(new EchoHandler());
 		this.webServer.start();
-		Mono<String> result = getWebClient(this.webServer.getPort()).build().post().uri("/test")
-				.contentType(MediaType.TEXT_PLAIN).body(BodyInserters.fromValue("Hello World")).retrieve()
-				.bodyToMono(String.class);
+		Mono<String> result = getWebClient(this.webServer.getPort()).build()
+			.post()
+			.uri("/test")
+			.contentType(MediaType.TEXT_PLAIN)
+			.body(BodyInserters.fromValue("Hello World"))
+			.retrieve()
+			.bodyToMono(String.class);
 		assertThat(result.block(Duration.ofSeconds(30))).isEqualTo("Hello World");
+	}
+
+	@Test
+	void startedLogMessageWithSinglePort() {
+		AbstractReactiveWebServerFactory factory = getFactory();
+		this.webServer = factory.getWebServer(new EchoHandler());
+		this.webServer.start();
+		assertThat(startedLogMessage()).matches(
+				"(Jetty|Netty|Tomcat|Undertow) started on port " + this.webServer.getPort() + " \\(http(/1.1)?\\)");
+	}
+
+	@Test
+	protected void startedLogMessageWithMultiplePorts() {
+		AbstractReactiveWebServerFactory factory = getFactory();
+		addConnector(0, factory);
+		this.webServer = factory.getWebServer(new EchoHandler());
+		this.webServer.start();
+		assertThat(startedLogMessage()).matches("(Jetty|Tomcat|Undertow) started on ports " + this.webServer.getPort()
+				+ " \\(http(/1.1)?\\), [0-9]+ \\(http(/1.1)?\\)");
 	}
 
 	protected WebClient prepareCompressionTest() {
@@ -532,9 +635,12 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		this.webServer = factory.getWebServer(new CharsHandler(3000, responseContentType));
 		this.webServer.start();
 
-		HttpClient client = HttpClient.create().wiretap(true).compress(true)
-				.doOnConnected((connection) -> connection.channel().pipeline().addBefore(NettyPipeline.HttpDecompressor,
-						"CompressionTest", new CompressionDetectionHandler()));
+		HttpClient client = HttpClient.create()
+			.wiretap(true)
+			.compress(true)
+			.doOnConnected((connection) -> connection.channel()
+				.pipeline()
+				.addBefore(NettyPipeline.HttpDecompressor, "CompressionTest", new CompressionDetectionHandler()));
 		return getWebClient(client, this.webServer.getPort()).build();
 	}
 
@@ -551,8 +657,12 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 	protected void assertForwardHeaderIsUsed(AbstractReactiveWebServerFactory factory) {
 		this.webServer = factory.getWebServer(new XForwardedHandler());
 		this.webServer.start();
-		String body = getWebClient(this.webServer.getPort()).build().get().header("X-Forwarded-Proto", "https")
-				.retrieve().bodyToMono(String.class).block(Duration.ofSeconds(30));
+		String body = getWebClient(this.webServer.getPort()).build()
+			.get()
+			.header("X-Forwarded-Proto", "https")
+			.retrieve()
+			.bodyToMono(String.class)
+			.block(Duration.ofSeconds(30));
 		assertThat(body).isEqualTo("https");
 	}
 
@@ -567,6 +677,27 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 			}
 		}
 		throw new IllegalStateException("Action was not successful in 10 attempts", lastFailure);
+	}
+
+	protected final void doWithBlockedPort(BlockedPortAction action) throws Exception {
+		ServerSocket serverSocket = new ServerSocket();
+		try (serverSocket) {
+			int blockedPort = doWithRetry(() -> {
+				serverSocket.bind(null);
+				return serverSocket.getLocalPort();
+			});
+			action.run(blockedPort);
+		}
+	}
+
+	protected abstract String startedLogMessage();
+
+	protected abstract void addConnector(int port, AbstractReactiveWebServerFactory factory);
+
+	public interface BlockedPortAction {
+
+		void run(int port);
+
 	}
 
 	protected static class EchoHandler implements HttpHandler {
@@ -629,8 +760,7 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 
 		@Override
 		public void channelRead(ChannelHandlerContext ctx, Object msg) {
-			if (msg instanceof HttpResponse) {
-				HttpResponse response = (HttpResponse) msg;
+			if (msg instanceof HttpResponse response) {
 				boolean compressed = response.headers().contains(HttpHeaderNames.CONTENT_ENCODING, "gzip", true);
 				if (compressed) {
 					response.headers().set("X-Test-Compressed", "true");

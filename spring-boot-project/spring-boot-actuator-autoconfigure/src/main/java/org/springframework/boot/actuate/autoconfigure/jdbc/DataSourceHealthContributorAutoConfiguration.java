@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.springframework.boot.actuate.autoconfigure.jdbc;
 
+import java.sql.SQLException;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
@@ -32,7 +33,7 @@ import org.springframework.boot.actuate.health.CompositeHealthContributor;
 import org.springframework.boot.actuate.health.HealthContributor;
 import org.springframework.boot.actuate.health.NamedContributor;
 import org.springframework.boot.actuate.jdbc.DataSourceHealthIndicator;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -43,7 +44,6 @@ import org.springframework.boot.jdbc.metadata.CompositeDataSourcePoolMetadataPro
 import org.springframework.boot.jdbc.metadata.DataSourcePoolMetadata;
 import org.springframework.boot.jdbc.metadata.DataSourcePoolMetadataProvider;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 import org.springframework.util.Assert;
@@ -61,11 +61,10 @@ import org.springframework.util.Assert;
  * @author Safeer Ansari
  * @since 2.0.0
  */
-@Configuration(proxyBeanMethods = false)
+@AutoConfiguration(after = DataSourceAutoConfiguration.class)
 @ConditionalOnClass({ JdbcTemplate.class, AbstractRoutingDataSource.class })
 @ConditionalOnBean(DataSource.class)
 @ConditionalOnEnabledHealthIndicator("db")
-@AutoConfigureAfter(DataSourceAutoConfiguration.class)
 @EnableConfigurationProperties(DataSourceHealthIndicatorProperties.class)
 public class DataSourceHealthContributorAutoConfiguration implements InitializingBean {
 
@@ -75,7 +74,7 @@ public class DataSourceHealthContributorAutoConfiguration implements Initializin
 
 	public DataSourceHealthContributorAutoConfiguration(
 			ObjectProvider<DataSourcePoolMetadataProvider> metadataProviders) {
-		this.metadataProviders = metadataProviders.orderedStream().collect(Collectors.toList());
+		this.metadataProviders = metadataProviders.orderedStream().toList();
 	}
 
 	@Override
@@ -88,9 +87,10 @@ public class DataSourceHealthContributorAutoConfiguration implements Initializin
 	public HealthContributor dbHealthContributor(Map<String, DataSource> dataSources,
 			DataSourceHealthIndicatorProperties dataSourceHealthIndicatorProperties) {
 		if (dataSourceHealthIndicatorProperties.isIgnoreRoutingDataSources()) {
-			Map<String, DataSource> filteredDatasources = dataSources.entrySet().stream()
-					.filter((e) -> !(e.getValue() instanceof AbstractRoutingDataSource))
-					.collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+			Map<String, DataSource> filteredDatasources = dataSources.entrySet()
+				.stream()
+				.filter((e) -> !isRoutingDataSource(e.getValue()))
+				.collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 			return createContributor(filteredDatasources);
 		}
 		return createContributor(dataSources);
@@ -105,9 +105,8 @@ public class DataSourceHealthContributorAutoConfiguration implements Initializin
 	}
 
 	private HealthContributor createContributor(DataSource source) {
-		if (source instanceof AbstractRoutingDataSource) {
-			AbstractRoutingDataSource routingDataSource = (AbstractRoutingDataSource) source;
-			return new RoutingDataSourceHealthContributor(routingDataSource, this::createContributor);
+		if (isRoutingDataSource(source)) {
+			return new RoutingDataSourceHealthContributor(extractRoutingDataSource(source), this::createContributor);
 		}
 		return new DataSourceHealthIndicator(source, getValidationQuery(source));
 	}
@@ -115,6 +114,30 @@ public class DataSourceHealthContributorAutoConfiguration implements Initializin
 	private String getValidationQuery(DataSource source) {
 		DataSourcePoolMetadata poolMetadata = this.poolMetadataProvider.getDataSourcePoolMetadata(source);
 		return (poolMetadata != null) ? poolMetadata.getValidationQuery() : null;
+	}
+
+	private static boolean isRoutingDataSource(DataSource dataSource) {
+		if (dataSource instanceof AbstractRoutingDataSource) {
+			return true;
+		}
+		try {
+			return dataSource.isWrapperFor(AbstractRoutingDataSource.class);
+		}
+		catch (SQLException ex) {
+			return false;
+		}
+	}
+
+	private static AbstractRoutingDataSource extractRoutingDataSource(DataSource dataSource) {
+		if (dataSource instanceof AbstractRoutingDataSource routingDataSource) {
+			return routingDataSource;
+		}
+		try {
+			return dataSource.unwrap(AbstractRoutingDataSource.class);
+		}
+		catch (SQLException ex) {
+			throw new IllegalStateException("Failed to unwrap AbstractRoutingDataSource from " + dataSource, ex);
+		}
 	}
 
 	/**
@@ -130,9 +153,11 @@ public class DataSourceHealthContributorAutoConfiguration implements Initializin
 
 		RoutingDataSourceHealthContributor(AbstractRoutingDataSource routingDataSource,
 				Function<DataSource, HealthContributor> contributorFunction) {
-			Map<String, DataSource> routedDataSources = routingDataSource.getResolvedDataSources().entrySet().stream()
-					.collect(Collectors.toMap((e) -> Objects.toString(e.getKey(), UNNAMED_DATASOURCE_KEY),
-							Map.Entry::getValue));
+			Map<String, DataSource> routedDataSources = routingDataSource.getResolvedDataSources()
+				.entrySet()
+				.stream()
+				.collect(Collectors.toMap((e) -> Objects.toString(e.getKey(), UNNAMED_DATASOURCE_KEY),
+						Map.Entry::getValue));
 			this.delegate = CompositeHealthContributor.fromMap(routedDataSources, contributorFunction);
 		}
 

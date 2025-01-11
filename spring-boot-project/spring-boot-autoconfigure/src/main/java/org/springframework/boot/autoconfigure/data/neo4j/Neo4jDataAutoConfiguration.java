@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,7 @@ import java.util.Set;
 import org.neo4j.driver.Driver;
 
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
-import org.springframework.boot.autoconfigure.AutoConfigureBefore;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -30,11 +29,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.domain.EntityScanner;
 import org.springframework.boot.autoconfigure.neo4j.Neo4jAutoConfiguration;
 import org.springframework.boot.autoconfigure.transaction.TransactionAutoConfiguration;
+import org.springframework.boot.autoconfigure.transaction.TransactionManagerCustomizationAutoConfiguration;
 import org.springframework.boot.autoconfigure.transaction.TransactionManagerCustomizers;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.data.neo4j.aot.Neo4jManagedTypes;
 import org.springframework.data.neo4j.core.DatabaseSelectionProvider;
 import org.springframework.data.neo4j.core.Neo4jClient;
 import org.springframework.data.neo4j.core.Neo4jOperations;
@@ -59,12 +59,11 @@ import org.springframework.transaction.TransactionManager;
  * @author Michael J. Simons
  * @since 1.4.0
  */
-@Configuration(proxyBeanMethods = false)
+@AutoConfiguration(before = TransactionAutoConfiguration.class,
+		after = { Neo4jAutoConfiguration.class, TransactionManagerCustomizationAutoConfiguration.class })
 @ConditionalOnClass({ Driver.class, Neo4jTransactionManager.class, PlatformTransactionManager.class })
 @EnableConfigurationProperties(Neo4jDataProperties.class)
 @ConditionalOnBean(Driver.class)
-@AutoConfigureBefore(TransactionAutoConfiguration.class)
-@AutoConfigureAfter(Neo4jAutoConfiguration.class)
 public class Neo4jDataAutoConfiguration {
 
 	@Bean
@@ -75,12 +74,17 @@ public class Neo4jDataAutoConfiguration {
 
 	@Bean
 	@ConditionalOnMissingBean
-	public Neo4jMappingContext neo4jMappingContext(ApplicationContext applicationContext,
-			Neo4jConversions neo4jConversions) throws ClassNotFoundException {
+	Neo4jManagedTypes neo4jManagedTypes(ApplicationContext applicationContext) throws ClassNotFoundException {
 		Set<Class<?>> initialEntityClasses = new EntityScanner(applicationContext).scan(Node.class,
 				RelationshipProperties.class);
+		return Neo4jManagedTypes.fromIterable(initialEntityClasses);
+	}
+
+	@Bean
+	@ConditionalOnMissingBean
+	public Neo4jMappingContext neo4jMappingContext(Neo4jManagedTypes managedTypes, Neo4jConversions neo4jConversions) {
 		Neo4jMappingContext context = new Neo4jMappingContext(neo4jConversions);
-		context.setInitialEntitySet(initialEntityClasses);
+		context.setManagedTypes(managedTypes);
 		return context;
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2021 the original author or authors.
+ * Copyright 2012-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +29,8 @@ import org.awaitility.Awaitility;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
-import org.springframework.boot.testsupport.BuildOutput;
 import org.springframework.util.FileCopyUtils;
+import org.springframework.util.FileSystemUtils;
 import org.springframework.util.StreamUtils;
 import org.springframework.util.StringUtils;
 
@@ -43,15 +43,15 @@ abstract class AbstractApplicationLauncher implements BeforeEachCallback {
 
 	private final Application application;
 
-	private final BuildOutput buildOutput;
+	private final File outputLocation;
 
 	private Process process;
 
 	private int httpPort;
 
-	protected AbstractApplicationLauncher(Application application, BuildOutput buildOutput) {
+	protected AbstractApplicationLauncher(Application application, File outputLocation) {
 		this.application = application;
-		this.buildOutput = buildOutput;
+		this.outputLocation = outputLocation;
 	}
 
 	@Override
@@ -71,6 +71,7 @@ abstract class AbstractApplicationLauncher implements BeforeEachCallback {
 				Thread.currentThread().interrupt();
 			}
 		}
+		FileSystemUtils.deleteRecursively(this.outputLocation);
 	}
 
 	final int getHttpPort() {
@@ -85,7 +86,7 @@ abstract class AbstractApplicationLauncher implements BeforeEachCallback {
 
 	private Process startApplication() throws Exception {
 		File workingDirectory = getWorkingDirectory();
-		File serverPortFile = new File(this.buildOutput.getRootLocation(), "server.port");
+		File serverPortFile = new File(this.outputLocation, "server.port");
 		serverPortFile.delete();
 		File archive = new File("build/spring-boot-server-tests-app/build/libs/spring-boot-server-tests-app-"
 				+ this.application.getContainer() + "." + this.application.getPackaging());
@@ -131,6 +132,7 @@ abstract class AbstractApplicationLauncher implements BeforeEachCallback {
 				StreamUtils.copy(this.input, this.output);
 			}
 			catch (IOException ex) {
+				// Ignore
 			}
 		}
 
